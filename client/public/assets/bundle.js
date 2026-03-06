@@ -11133,17 +11133,16 @@ window.vultr = vultr;
                     resize();
                 }
             } else {
-                if (nearestEnemyDist >= 300 || !enemiesNear.length) {
-                if (maxScreenWidth != config.maxScreenWidth/1.3|| maxScreenHeight != config.maxScreenHeight/1.3) {
-                    maxScreenWidth = config.maxScreenWidth/1.3;
-                    maxScreenHeight = config.maxScreenHeight/1.3;
-                    resize();
-                }
-                }
-                else {
-                    if (maxScreenWidth != config.maxScreenWidth || maxScreenHeight != config.maxScreenHeight) {
+                if (nearestEnemyDist >= 300) {
+                if (maxScreenWidth != config.maxScreenWidth || maxScreenHeight != config.maxScreenHeight) {
                     maxScreenWidth = config.maxScreenWidth;
                     maxScreenHeight = config.maxScreenHeight;
+                    resize();
+                }
+                } else {
+                    if (maxScreenWidth != config.maxScreenWidth/1.3|| maxScreenHeight != config.maxScreenHeight/1.3) {
+                    maxScreenWidth = config.maxScreenWidth/1.3;
+                    maxScreenHeight = config.maxScreenHeight/1.3;
                     resize();
                 }
                 }
