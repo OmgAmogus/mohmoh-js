@@ -241,16 +241,22 @@ export class Game {
 
         const string_id = UTILS.randomString(16);
         const sid = this.id_storage.findIndex(bool => bool);
-        const player = new Player("self", 0);
-        window.config = config || {};
-window.UTILS = UTILS || {};
-window.players = this.players || {};
-window.ais = this.ais || {}
-window.hats = hats || {}
-window.accessories = accessories || {}
-window.socket = socket || {}
-        window.scoreCallback = () => {},
-            window.iconCallback = () => {},
+        const player = new Player(
+            string_id,
+            sid,
+            config,
+            UTILS,
+            this.projectile_manager,
+            this.object_manager,
+            this.players,
+            this.ais,
+            items,
+            hats,
+            accessories,
+            socket,
+            () => {},
+            () => {}
+        );
 
         player.send("io-init", player.id);
         player.send("id", {
