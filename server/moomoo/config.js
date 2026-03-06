@@ -9,7 +9,7 @@ config.maxScreenHeight = 1080;
 
 // SERVER:
 config.serverUpdateRate = 9;
-config.maxPlayers = 10;
+config.maxPlayers = process && process.argv.indexOf("--largeserver") != -1 ? 80 : 10;
 config.maxPlayersHard = config.maxPlayers + 10;
 config.collisionDepth = 6;
 config.minimapRate = 3000;
