@@ -11127,31 +11127,17 @@ window.vultr = vultr;
                     }
                 const power = 1.01;
                 if (nearestEnemyDist <= 1000) {
-                    if (maxScreenWidth >= 500) {
-                for (let i = 0; i < 25; i += 1) {
-                    setTimeout(() => {
-                        if (maxScreenWidth < 500) {
-                            return;
-                        }
-                        maxScreenWidth /= power;
-                        maxScreenHeight /= power;
-                        resize();
-                    }, i * 5);
-                }
+                    if (maxScreenWidth <= 50000) {
+                maxScreenWidth *= 1.282;
+                maxScreenHeight *= 1.282;
+                resize();
             }
             } else {
-                if (maxScreenWidth <= 50000) {
-                    for (let i = 0; i < 25; i += 1) {
-                        setTimeout(() => {
-                            if (maxScreenWidth > 50000) {
-                                return;
-                            }
-                            maxScreenWidth *= power;
-                            maxScreenHeight *= power;
-                            resize();
-                        }, i * 5);
-                    }
-                }
+                if (maxScreenWidth >= 500) {
+                maxScreenWidth /= 1.283;
+                maxScreenHeight /= 1.283;
+                resize();
+            }
             }
                 }
 
