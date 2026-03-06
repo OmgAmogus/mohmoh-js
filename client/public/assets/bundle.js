@@ -9947,268 +9947,288 @@ window.vultr = vultr;
 
             // UPDATE GAME:
             function updateGame() {
-    if (true) {
-        if (player) {
-            if (!lastSent || now - lastSent >= (1000 / config.clientSendRate)) {
-                lastSent = now;
-                io.send("D", getAttackDir());
-            }
-        }
-        if (deathTextScale < 120) {
-            deathTextScale += 0.1 * delta;
-            diedText.style.fontSize = Math.min(Math.round(deathTextScale), 120) + "px";
-        }
-        if (player) {
-            var tmpDist = UTILS.getDistance(camX, camY, player.x, player.y);
-            var tmpDir = UTILS.getDirection(player.x, player.y, camX, camY);
-            var camSpd = Math.min(tmpDist * 0.01 * delta, tmpDist);
-            if (tmpDist > 0.05) {
-                camX += camSpd * Math.cos(tmpDir);
-                camY += camSpd * Math.sin(tmpDir);
-            } else {
-                camX = player.x;
-                camY = player.y;
-            }
-        } else {
-            camX = config.mapScale / 2;
-            camY = config.mapScale / 2;
-        }
-        var lastTime = now - (1000 / config.serverUpdateRate);
-        var tmpDiff;
-        for (var i = 0; i < players.length + ais.length; ++i) {
-            tmpObj = players[i] || ais[i - players.length];
-            if (tmpObj && tmpObj.visible) {
-                if (tmpObj.forcePos) {
-                    tmpObj.x = tmpObj.x2;
-                    tmpObj.y = tmpObj.y2;
-                    tmpObj.dir = tmpObj.d2;
-                } else {
-                    var total = tmpObj.t2 - tmpObj.t1;
-                    var fraction = lastTime - tmpObj.t1;
-                    var ratio = (fraction / total);
-                    var rate = 170;
-                    tmpObj.dt += delta;
-                    var tmpRate = Math.min(1.7, tmpObj.dt / rate);
-                    var tmpDiff = (tmpObj.x2 - tmpObj.x1);
-                    tmpObj.x = tmpObj.x1 + (tmpDiff * tmpRate);
-                    tmpDiff = (tmpObj.y2 - tmpObj.y1);
-                    tmpObj.y = tmpObj.y1 + (tmpDiff * tmpRate);
-                    tmpObj.dir = Math.lerpAngle(tmpObj.d2, tmpObj.d1, Math.min(1.2, ratio));
-                }
-            }
-        }
+                if (true) {
 
-        var xOffset = camX - (maxScreenWidth / 2);
-        var yOffset = camY - (maxScreenHeight / 2);
-
-        prepareObjectRenderLists(xOffset, yOffset, delta);
-
-        if (config.snowBiomeTop - yOffset <= 0 && config.mapScale - config.snowBiomeTop - yOffset >= maxScreenHeight) {
-            mainContext.fillStyle = "#b6db66";
-            mainContext.fillRect(0, 0, maxScreenWidth, maxScreenHeight);
-        } else if (config.mapScale - config.snowBiomeTop - yOffset <= 0) {
-            mainContext.fillStyle = "#dbc666";
-            mainContext.fillRect(0, 0, maxScreenWidth, maxScreenHeight);
-        } else if (config.snowBiomeTop - yOffset >= maxScreenHeight) {
-            mainContext.fillStyle = "#fff";
-            mainContext.fillRect(0, 0, maxScreenWidth, maxScreenHeight);
-        } else if (config.snowBiomeTop - yOffset >= 0) {
-            mainContext.fillStyle = "#fff";
-            mainContext.fillRect(0, 0, maxScreenWidth, config.snowBiomeTop - yOffset);
-            mainContext.fillStyle = "#b6db66";
-            mainContext.fillRect(0, config.snowBiomeTop - yOffset, maxScreenWidth, maxScreenHeight - (config.snowBiomeTop - yOffset));
-        } else {
-            mainContext.fillStyle = "#b6db66";
-            mainContext.fillRect(0, 0, maxScreenWidth, (config.mapScale - config.snowBiomeTop - yOffset));
-            mainContext.fillStyle = "#dbc666";
-            mainContext.fillRect(0, (config.mapScale - config.snowBiomeTop - yOffset), maxScreenWidth, maxScreenHeight - (config.mapScale - config.snowBiomeTop - yOffset));
-        }
-
-        if (!firstSetup) {
-            waterMult += waterPlus * config.waveSpeed * delta;
-            if (waterMult >= config.waveMax) {
-                waterMult = config.waveMax;
-                waterPlus = -1;
-            } else if (waterMult <= 1) {
-                waterMult = waterPlus = 1;
-            }
-            mainContext.globalAlpha = 1;
-            mainContext.fillStyle = "#dbc666";
-            renderWaterBodies(xOffset, yOffset, mainContext, config.riverPadding);
-            mainContext.fillStyle = "#91b2db";
-            renderWaterBodies(xOffset, yOffset, mainContext, (waterMult - 1) * 250);
-        }
-
-        mainContext.lineWidth = 4;
-        mainContext.strokeStyle = "#000";
-        mainContext.globalAlpha = 0.06;
-        mainContext.beginPath();
-
-        // Add grind checkbox in main menu
-        for (var x = -camX; x < maxScreenWidth; x += maxScreenHeight / 18) {
-            if (x > 0) {
-                mainContext.moveTo(x, 0);
-                mainContext.lineTo(x, maxScreenHeight);
-            }
-        }
-
-        for (var y = -camY; y < maxScreenHeight; y += maxScreenHeight / 18) {
-            if (x > 0) {
-                mainContext.moveTo(0, y);
-                mainContext.lineTo(maxScreenWidth, y);
-            }
-        }
-
-        mainContext.stroke();
-
-        mainContext.globalAlpha = 1;
-        mainContext.strokeStyle = outlineColor;
-        renderGameObjects(-1, xOffset, yOffset);
-
-        mainContext.globalAlpha = 1;
-        mainContext.lineWidth = outlineWidth;
-        renderProjectiles(0, xOffset, yOffset);
-
-        renderPlayers(xOffset, yOffset, 0);
-
-        mainContext.globalAlpha = 1;
-        for (var i = 0; i < ais.length; ++i) {
-            tmpObj = ais[i];
-            if (tmpObj.active && tmpObj.visible) {
-                tmpObj.animate(delta);
-                mainContext.save();
-                mainContext.translate(tmpObj.x - xOffset, tmpObj.y - yOffset);
-                mainContext.rotate(tmpObj.dir + tmpObj.dirPlus - (Math.PI / 2));
-                renderAI(tmpObj, mainContext);
-                mainContext.restore();
-            }
-        }
-
-        renderGameObjects(0, xOffset, yOffset);
-        renderProjectiles(1, xOffset, yOffset);
-        renderGameObjects(1, xOffset, yOffset);
-        renderPlayers(xOffset, yOffset, 1);
-        renderGameObjects(2, xOffset, yOffset);
-        renderGameObjects(3, xOffset, yOffset);
-
-        mainContext.fillStyle = "#000";
-        mainContext.globalAlpha = 0.09;
-        if (xOffset <= 0) {
-            mainContext.fillRect(0, 0, -xOffset, maxScreenHeight);
-        }
-        if (config.mapScale - xOffset <= maxScreenWidth) {
-            var tmpY = Math.max(0, -yOffset);
-            mainContext.fillRect(config.mapScale - xOffset, tmpY, maxScreenWidth - (config.mapScale - xOffset), maxScreenHeight - tmpY);
-        }
-        if (yOffset <= 0) {
-            mainContext.fillRect(-xOffset, 0, maxScreenWidth + xOffset, -yOffset);
-        }
-        if (config.mapScale - yOffset <= maxScreenHeight) {
-            var tmpX = Math.max(0, -xOffset);
-            var tmpMin = 0;
-            if (config.mapScale - xOffset <= maxScreenWidth) {
-                tmpMin = maxScreenWidth - (config.mapScale - xOffset);
-            }
-            mainContext.fillRect(tmpX, config.mapScale - yOffset, (maxScreenWidth - tmpX) - tmpMin, maxScreenHeight - (config.mapScale - yOffset));
-        }
-
-        mainContext.globalAlpha = 1;
-        mainContext.fillStyle = "rgba(0, 0, 70, 0.35)";
-        mainContext.fillRect(0, 0, maxScreenWidth, maxScreenHeight);
-
-        mainContext.strokeStyle = darkOutlineColor;
-        for (var i = 0; i < players.length + ais.length; ++i) {
-            tmpObj = players[i] || ais[i - players.length];
-            if (tmpObj.visible) {
-
-                if (tmpObj.skinIndex != 10 || (tmpObj == player) || (tmpObj.team && tmpObj.team == player.team)) {
-                    var tmpText = (tmpObj.team ? "[" + tmpObj.team + "] " : "") + (tmpObj.name || "");
-                    if (tmpText != "") {
-                        mainContext.font = (tmpObj.nameScale || 30) + "px Hammersmith One";
-                        mainContext.fillStyle = "#fff";
-                        mainContext.textBaseline = "middle";
-                        mainContext.textAlign = "center";
-                        mainContext.lineWidth = (tmpObj.nameScale ? 11 : 8);
-                        mainContext.lineJoin = "round";
-                        mainContext.strokeText(tmpText, tmpObj.x - xOffset, (tmpObj.y - yOffset - tmpObj.scale) - config.nameY);
-                        mainContext.fillText(tmpText, tmpObj.x - xOffset, (tmpObj.y - yOffset - tmpObj.scale) - config.nameY);
-                        if (tmpObj.isLeader && iconSprites["crown"].isLoaded) {
-                            var tmpS = config.crownIconScale;
-                            var tmpX = tmpObj.x - xOffset - (tmpS / 2) - (mainContext.measureText(tmpText).width / 2) - config.crownPad;
-                            mainContext.drawImage(iconSprites["crown"], tmpX, (tmpObj.y - yOffset - tmpObj.scale) -
-                                config.nameY - (tmpS / 2) - 5, tmpS, tmpS);
-                        }
-                        if (tmpObj.iconIndex == 1 && iconSprites["skull"].isLoaded) {
-                            var tmpS = config.crownIconScale;
-                            var tmpX = tmpObj.x - xOffset - (tmpS / 2) + (mainContext.measureText(tmpText).width / 2) + config.crownPad;
-                            mainContext.drawImage(iconSprites["skull"], tmpX, (tmpObj.y - yOffset - tmpObj.scale) - config.nameY - (tmpS / 2) - 5, tmpS, tmpS);
+                    // UPDATE DIRECTION:
+                    if (player) {
+                        if (!lastSent || now - lastSent >= (1000 / config.clientSendRate)) {
+                            lastSent = now;
+                            io.send("2", getAttackDir());
                         }
                     }
-                    var statsParts = [];
-                    if (typeof tmpObj.cps === "number" && tmpObj.cps >= 0) {
-                        statsParts.push(Math.max(0, Math.round(tmpObj.cps)) + " CPS");
+
+                    // DEATH TEXT:
+                    if (deathTextScale < 120) {
+                        deathTextScale += 0.1 * delta;
+                        diedText.style.fontSize = Math.min(Math.round(deathTextScale), 120) + "px";
                     }
-                    if (typeof tmpObj.ping === "number" && tmpObj.ping >= 0) {
-                        statsParts.push(tmpObj.ping + "ms");
+
+                    // MOVE CAMERA:
+                    if (player) {
+                        var tmpDist = UTILS.getDistance(camX, camY, player.x, player.y);
+                        var tmpDir = UTILS.getDirection(player.x, player.y, camX, camY);
+                        var camSpd = Math.min(tmpDist * 0.01 * delta, tmpDist);
+                        if (tmpDist > 0.05) {
+                            camX += camSpd * Math.cos(tmpDir);
+                            camY += camSpd * Math.sin(tmpDir);
+                        } else {
+                            camX = player.x;
+                            camY = player.y;
+                        }
+                    } else {
+                        camX = config.mapScale / 2;
+                        camY = config.mapScale / 2;
                     }
-                    if (statsParts.length > 0) {
-                        var statsText = statsParts.join(" | ");
-                        var statsY = (tmpObj.y - yOffset - tmpObj.scale) - config.nameY + 22;
-                        mainContext.font = "20px Hammersmith One";
-                        mainContext.lineWidth = 6;
-                        mainContext.strokeText(statsText, tmpObj.x - xOffset, statsY);
+
+                    // INTERPOLATE PLAYERS AND AI:
+                    var lastTime = now - (1000 / config.serverUpdateRate);
+                    var tmpDiff;
+                    for (var i = 0; i < players.length + ais.length; ++i) {
+                        tmpObj = players[i] || ais[i - players.length];
+                        if (tmpObj && tmpObj.visible) {
+                            if (tmpObj.forcePos) {
+                                tmpObj.x = tmpObj.x2;
+                                tmpObj.y = tmpObj.y2;
+                                tmpObj.dir = tmpObj.d2;
+                            } else {
+                                var total = tmpObj.t2 - tmpObj.t1;
+                                var fraction = lastTime - tmpObj.t1;
+                                var ratio = (fraction / total);
+                                var rate = 170;
+                                tmpObj.dt += delta;
+                                var tmpRate = Math.min(1.7, tmpObj.dt / rate);
+                                var tmpDiff = (tmpObj.x2 - tmpObj.x1);
+                                tmpObj.x = tmpObj.x1 + (tmpDiff * tmpRate);
+                                tmpDiff = (tmpObj.y2 - tmpObj.y1);
+                                tmpObj.y = tmpObj.y1 + (tmpDiff * tmpRate);
+                                tmpObj.dir = Math.lerpAngle(tmpObj.d2, tmpObj.d1, Math.min(1.2, ratio));
+                            }
+                        }
+                    }
+
+                    // RENDER CORDS:
+                    var xOffset = camX - (maxScreenWidth / 2);
+                    var yOffset = camY - (maxScreenHeight / 2);
+
+                    // RENDER BACKGROUND:
+                    if (config.snowBiomeTop - yOffset <= 0 && config.mapScale - config.snowBiomeTop - yOffset >= maxScreenHeight) {
+                        mainContext.fillStyle = "#b6db66";
+                        mainContext.fillRect(0, 0, maxScreenWidth, maxScreenHeight);
+                    } else if (config.mapScale - config.snowBiomeTop - yOffset <= 0) {
+                        mainContext.fillStyle = "#dbc666";
+                        mainContext.fillRect(0, 0, maxScreenWidth, maxScreenHeight);
+                    } else if (config.snowBiomeTop - yOffset >= maxScreenHeight) {
                         mainContext.fillStyle = "#fff";
-                        mainContext.fillText(statsText, tmpObj.x - xOffset, statsY);
+                        mainContext.fillRect(0, 0, maxScreenWidth, maxScreenHeight);
+                    } else if (config.snowBiomeTop - yOffset >= 0) {
+                        mainContext.fillStyle = "#fff";
+                        mainContext.fillRect(0, 0, maxScreenWidth, config.snowBiomeTop - yOffset);
+                        mainContext.fillStyle = "#b6db66";
+                        mainContext.fillRect(0, config.snowBiomeTop - yOffset, maxScreenWidth,
+                            maxScreenHeight - (config.snowBiomeTop - yOffset));
+                    } else {
+                        mainContext.fillStyle = "#b6db66";
+                        mainContext.fillRect(0, 0, maxScreenWidth,
+                            (config.mapScale - config.snowBiomeTop - yOffset));
+                        mainContext.fillStyle = "#dbc666";
+                        mainContext.fillRect(0, (config.mapScale - config.snowBiomeTop - yOffset), maxScreenWidth,
+                            maxScreenHeight - (config.mapScale - config.snowBiomeTop - yOffset));
                     }
-                    if (tmpObj.health > 0) {
 
-                        mainContext.fillStyle = darkOutlineColor;
-                        mainContext.roundRect(tmpObj.x - xOffset - config.healthBarWidth - config.healthBarPad, (tmpObj.y - yOffset + tmpObj.scale) + config.nameY, (config.healthBarWidth * 2) + (config.healthBarPad * 2), 17, 8);
-                        mainContext.fill();
+                    // RENDER WATER AREAS:
+                    if (!firstSetup) {
+                        waterMult += waterPlus * config.waveSpeed * delta;
+                        if (waterMult >= config.waveMax) {
+                            waterMult = config.waveMax;
+                            waterPlus = -1;
+                        } else if (waterMult <= 1) {
+                            waterMult = waterPlus = 1;
+                        }
+                        mainContext.globalAlpha = 1;
+                        mainContext.fillStyle = "#dbc666";
+                        renderWaterBodies(xOffset, yOffset, mainContext, config.riverPadding);
+                        mainContext.fillStyle = "#91b2db";
+                        renderWaterBodies(xOffset, yOffset, mainContext, (waterMult - 1) * 250);
+                    }
 
-                        mainContext.fillStyle = (tmpObj == player || (tmpObj.team && tmpObj.team == player.team)) ? "#8ecc51" : "#cc5151";
-                        mainContext.roundRect(tmpObj.x - xOffset - config.healthBarWidth, (tmpObj.y - yOffset + tmpObj.scale) + config.nameY + config.healthBarPad, ((config.healthBarWidth * 2) * (tmpObj.health / tmpObj.maxHealth)), 17 - config.healthBarPad * 2, 7);
-                        mainContext.fill();
+                    // RENDER GRID:
+                    mainContext.lineWidth = 4;
+                    mainContext.strokeStyle = "#000";
+                    mainContext.globalAlpha = 0.06;
+                    mainContext.beginPath();
+                    for (let x = -camX; x < maxScreenWidth; x += 60) {
+                        if (x > 0) {
+                            mainContext.moveTo(x, 0);
+                            mainContext.lineTo(x, maxScreenHeight);
+                        }
+                    }
+                    for (let y = -camY; y < maxScreenHeight; y += 60) {
+                        if (y > 0) {
+                            mainContext.moveTo(0, y);
+                            mainContext.lineTo(maxScreenWidth, y);
+                        }
+                    }
+                    mainContext.stroke();
+
+                    // RENDER BOTTOM LAYER:
+                    mainContext.globalAlpha = 1;
+                    mainContext.strokeStyle = outlineColor;
+                    renderGameObjects(-1, xOffset, yOffset);
+
+                    // RENDER PROJECTILES:
+                    mainContext.globalAlpha = 1;
+                    mainContext.strokeStyle = outlineColor;
+                    mainContext.lineWidth = outlineWidth;
+                    renderProjectiles(0, xOffset, yOffset);
+
+                    // RENDER PLAYERS:
+                    renderPlayers(xOffset, yOffset, 0);
+
+                    // RENDER AI:
+                    mainContext.globalAlpha = 1;
+                    for (var i = 0; i < ais.length; ++i) {
+                        tmpObj = ais[i];
+                        if (tmpObj.active && tmpObj.visible) {
+                            tmpObj.animate(delta);
+                            mainContext.save();
+                            mainContext.translate(tmpObj.x - xOffset, tmpObj.y - yOffset);
+                            mainContext.rotate(tmpObj.dir + tmpObj.dirPlus - (Math.PI / 2));
+                            renderAI(tmpObj, mainContext);
+                            mainContext.restore();
+                        }
+                    }
+
+                    // RENDER GAME OBJECTS (LAYERED):
+                    renderGameObjects(0, xOffset, yOffset);
+                    renderProjectiles(1, xOffset, yOffset);
+                    renderGameObjects(1, xOffset, yOffset);
+                    renderPlayers(xOffset, yOffset, 1);
+                    renderGameObjects(2, xOffset, yOffset);
+                    renderGameObjects(3, xOffset, yOffset);
+
+                    // MAP BOUNDARIES:
+                    mainContext.fillStyle = "#000";
+                    mainContext.globalAlpha = 0.09;
+                    if (xOffset <= 0) {
+                        mainContext.fillRect(0, 0, -xOffset, maxScreenHeight);
+                    }
+                    if (config.mapScale - xOffset <= maxScreenWidth) {
+                        var tmpY = Math.max(0, -yOffset);
+                        mainContext.fillRect(config.mapScale - xOffset, tmpY, maxScreenWidth - (config.mapScale - xOffset), maxScreenHeight - tmpY);
+                    }
+                    if (yOffset <= 0) {
+                        mainContext.fillRect(-xOffset, 0, maxScreenWidth + xOffset, -yOffset);
+                    }
+                    if (config.mapScale - yOffset <= maxScreenHeight) {
+                        var tmpX = Math.max(0, -xOffset);
+                        var tmpMin = 0;
+                        if (config.mapScale - xOffset <= maxScreenWidth)
+                            tmpMin = maxScreenWidth - (config.mapScale - xOffset);
+                        mainContext.fillRect(tmpX, config.mapScale - yOffset,
+                            (maxScreenWidth - tmpX) - tmpMin, maxScreenHeight - (config.mapScale - yOffset));
+                    }
+
+                    // RENDER DAY/NIGHT TIME:
+                    mainContext.globalAlpha = 1;
+                    mainContext.fillStyle = "rgba(0, 0, 70, 0.35)";
+                    mainContext.fillRect(0, 0, maxScreenWidth, maxScreenHeight);
+
+                    // RENDER PLAYER AND AI UI:
+                    mainContext.strokeStyle = darkOutlineColor;
+                    for (var i = 0; i < players.length + ais.length; ++i) {
+                        tmpObj = players[i] || ais[i - players.length];
+                        if (tmpObj.visible) {
+
+                            // NAME AND HEALTH:
+                            if (tmpObj.skinIndex != 10 || (tmpObj == player) || (tmpObj.team && tmpObj.team == player.team)) {
+                                var tmpText = (tmpObj.team ? "[" + tmpObj.team + "] " : "") + (tmpObj.name || "") + (tmpObj.isPlayer ? " {" + tmpObj.sid + "}" : "");
+                                if (tmpText != "") {
+                                    mainContext.font = (tmpObj.nameScale || 30) + "px Hammersmith One";
+                                    mainContext.fillStyle = "#fff";
+                                    mainContext.textBaseline = "middle";
+                                    mainContext.textAlign = "center";
+                                    mainContext.lineWidth = (tmpObj.nameScale ? 11 : 8);
+                                    mainContext.lineJoin = "round";
+                                    mainContext.strokeText(tmpText, tmpObj.x - xOffset, (tmpObj.y - yOffset - tmpObj.scale) - config.nameY);
+                                    mainContext.fillText(tmpText, tmpObj.x - xOffset, (tmpObj.y - yOffset - tmpObj.scale) - config.nameY);
+                                    if (tmpObj.isLeader && iconSprites["crown"].isLoaded) {
+                                        var tmpS = config.crownIconScale;
+                                        var tmpX = tmpObj.x - xOffset - (tmpS / 2) - (mainContext.measureText(tmpText).width / 2) - config.crownPad;
+                                        mainContext.drawImage(iconSprites["crown"], tmpX, (tmpObj.y - yOffset - tmpObj.scale) -
+                                            config.nameY - (tmpS / 2) - 5, tmpS, tmpS);
+                                    }
+                                    if (tmpObj.iconIndex == 1 && iconSprites["skull"].isLoaded) {
+                                        var tmpS = config.crownIconScale;
+                                        var tmpX = tmpObj.x - xOffset - (tmpS / 2) + (mainContext.measureText(tmpText).width / 2) + config.crownPad;
+                                        mainContext.drawImage(iconSprites["skull"], tmpX, (tmpObj.y - yOffset - tmpObj.scale) -
+                                            config.nameY - (tmpS / 2) - 5, tmpS, tmpS);
+                                    }
+                                }
+                                if (tmpObj.health > 0) {
+
+                                    // HEALTH HOLDER:
+                                    var tmpWidth = config.healthBarWidth;
+                                    mainContext.fillStyle = darkOutlineColor;
+                                    mainContext.roundRect(tmpObj.x - xOffset - config.healthBarWidth - config.healthBarPad,
+                                        (tmpObj.y - yOffset + tmpObj.scale) + config.nameY, (config.healthBarWidth * 2) +
+                                        (config.healthBarPad * 2), 17, 8);
+                                    mainContext.fill();
+
+                                    // HEALTH BAR:
+                                    mainContext.fillStyle = (tmpObj == player || (tmpObj.team && tmpObj.team == player.team)) ? "#8ecc51" : "#cc5151";
+                                    mainContext.roundRect(tmpObj.x - xOffset - config.healthBarWidth,
+                                        (tmpObj.y - yOffset + tmpObj.scale) + config.nameY + config.healthBarPad,
+                                        ((config.healthBarWidth * 2) * (tmpObj.health / tmpObj.maxHealth)), 17 - config.healthBarPad * 2, 7);
+                                    mainContext.fill();
+                                }
+                            }
+                        }
+                    }
+
+                    // RENDER ANIM TEXTS:
+                    textManager.update(delta, mainContext, xOffset, yOffset);
+
+                    // RENDER CHAT MESSAGES:
+                    for (var i = 0; i < players.length; ++i) {
+                        tmpObj = players[i];
+                        if (tmpObj.visible && tmpObj.chatCountdown > 0) {
+                            tmpObj.chatCountdown -= delta;
+                            if (tmpObj.chatCountdown <= 0)
+                                tmpObj.chatCountdown = 0;
+                            mainContext.font = "32px Hammersmith One";
+                            var tmpSize = mainContext.measureText(tmpObj.chatMessage);
+                            mainContext.textBaseline = "middle";
+                            mainContext.textAlign = "center";
+                            var tmpX = tmpObj.x - xOffset;
+                            var tmpY = tmpObj.y - tmpObj.scale - yOffset - 90;
+                            var tmpH = 47;
+                            var tmpW = tmpSize.width + 17;
+                            mainContext.fillStyle = "rgba(0,0,0,0.2)";
+                            mainContext.roundRect(tmpX - tmpW / 2, tmpY - tmpH / 2, tmpW, tmpH, 6);
+                            mainContext.fill();
+                            mainContext.fillStyle = "#fff";
+                            mainContext.fillText(tmpObj.chatMessage, tmpX, tmpY);
+                        }
                     }
                 }
-            }
-        }
 
-        textManager.update(delta, mainContext, xOffset, yOffset);
+                // RENDER MINIMAP:
+                renderMinimap(delta);
 
-        for (var i = 0; i < players.length; ++i) {
-            tmpObj = players[i];
-            if (tmpObj.visible && tmpObj.chatCountdown > 0) {
-                tmpObj.chatCountdown -= delta;
-                if (tmpObj.chatCountdown <= 0) {
-                    tmpObj.chatCountdown = 0;
+                // RENDER CONTROLS:
+                if (controllingTouch.id !== -1) {
+                    renderControl(
+                        controllingTouch.startX, controllingTouch.startY,
+                        controllingTouch.currentX, controllingTouch.currentY
+                    );
                 }
-                mainContext.font = "32px Hammersmith One";
-                var tmpSize = mainContext.measureText(tmpObj.chatMessage);
-                mainContext.textBaseline = "middle";
-                mainContext.textAlign = "center";
-                var tmpX = tmpObj.x - xOffset;
-                var tmpY = tmpObj.y - tmpObj.scale - yOffset - 90;
-                var tmpH = 47;
-                var tmpW = tmpSize.width + 17;
-                mainContext.fillStyle = "rgba(0,0,0,0.2)";
-                mainContext.roundRect(tmpX - tmpW / 2, tmpY - tmpH / 2, tmpW, tmpH, 6);
-                mainContext.fill();
-                mainContext.fillStyle = "#fff";
-                mainContext.fillText(tmpObj.chatMessage, tmpX, tmpY);
+                if (attackingTouch.id !== -1) {
+                    renderControl(
+                        attackingTouch.startX, attackingTouch.startY,
+                        attackingTouch.currentX, attackingTouch.currentY
+                    );
+                }
             }
-        }
-    }
-
-    renderMinimap(delta);
-
-    if (controllingTouch.id !== -1) {
-        renderControl(controllingTouch.startX, controllingTouch.startY, controllingTouch.currentX, controllingTouch.currentY);
-    }
-    if (attackingTouch.id !== -1) {
-        renderControl(attackingTouch.startX, attackingTouch.startY, attackingTouch.currentX, attackingTouch.currentY);
-    }
-}
 
             // RENDER CONTROL:
             function renderControl(startX, startY, currentX, currentY) {
