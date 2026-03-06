@@ -47,7 +47,6 @@ export class ObjectManager {
         this.disableObj = function(obj) {
             obj.active = false;
 
-            if (server) {
             if (obj.owner && obj.pps) {
                 obj.owner.pps -= obj.pps;
             }
@@ -56,7 +55,6 @@ export class ObjectManager {
             if (tmpIndx >= 0) {
                 this.updateObjects.splice(tmpIndx, 1);
             }
-          }
         };
 
         // HIT OBJECT:
