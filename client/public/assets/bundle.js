@@ -11133,7 +11133,7 @@ window.vultr = vultr;
                     resize();
                 }
             } else {
-                if (nearestEnemyDist >= 300) {
+                if (nearestEnemyDist >= 500) {
                 if (maxScreenWidth != config.maxScreenWidth || maxScreenHeight != config.maxScreenHeight) {
                     maxScreenWidth = config.maxScreenWidth;
                     maxScreenHeight = config.maxScreenHeight;
