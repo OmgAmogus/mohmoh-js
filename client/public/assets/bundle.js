@@ -11126,18 +11126,25 @@ window.vultr = vultr;
                         nearestEnemyDist = undefined;
                     }
                 const power = 1.01;
-                if (nearestEnemyDist <= 1000) {
-                    if (maxScreenWidth <= 50000) {
-                maxScreenWidth *= 1.282;
-                maxScreenHeight *= 1.282;
-                resize();
-            }
+               if (nearestEnemyDist >= 1000 || !enemiesNear.length) {
+                if (maxScreenWidth != config.maxScreenWidth*1.3 || maxScreenHeight != config.maxScreenHeight*1.3) {
+                    maxScreenWidth = config.maxScreenWidth*1.3;
+                    maxScreenHeight = config.maxScreenHeight*1.3;
+                    resize();
+                }
             } else {
-                if (maxScreenWidth >= 500) {
-                maxScreenWidth /= 1.283;
-                maxScreenHeight /= 1.283;
-                resize();
-            }
+                if (maxScreenWidth != config.maxScreenWidth|| maxScreenHeight != config.maxScreenHeight) {
+                    maxScreenWidth = config.maxScreenWidth;
+                    maxScreenHeight = config.maxScreenHeight;
+                    resize();
+                }
+                else {
+                    if (maxScreenWidth != config.maxScreenWidth/1.3 || maxScreenHeight != config.maxScreenHeight/1.3) {
+                    maxScreenWidth = config.maxScreenWidth/1.3;
+                    maxScreenHeight = config.maxScreenHeight/1.3;
+                    resize();
+                }
+                }
             }
                 }
 
