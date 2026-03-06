@@ -1,3 +1,15 @@
+function linker(value) {
+        const hook = {
+            0: value,
+            toString: (radix) => hook[0].toString(radix),
+            valueOf: () => hook[0].valueOf(),
+            get length() {
+                return hook[0].length;
+            }
+        };
+        return hook;
+    }
+
 const vultr = {
     servers: []
 };
@@ -8054,6 +8066,13 @@ window.vultr = vultr;
             var UTILS = __webpack_require__( /*! ./libs/utils.js */ "./src/js/libs/utils.js");
             var animText = __webpack_require__( /*! ./libs/animText.js */ "./src/js/libs/animText.js");
             var config = __webpack_require__( /*! ./config.js */ "./src/js/config.js");
+            const scale = {
+        width: 192,
+        height: 108
+    };
+            config.maxScreenWidth = linker(1920 + scale.width * 3);
+        config.maxScreenHeight = linker(1080 + scale.height * 3);
+
             var GameObject = __webpack_require__( /*! ./data/gameObject.js */ "./src/js/data/gameObject.js");
             var items = __webpack_require__( /*! ./data/items.js */ "./src/js/data/items.js");
             var MapManager = __webpack_require__( /*! ./data/mapManager.js */ "./src/js/data/mapManager.js");
@@ -8367,6 +8386,44 @@ window.vultr = vultr;
             var outlineColor = "#525252";
             var darkOutlineColor = "#3d3f42";
             var outlineWidth = 5.5;
+            gameCanvas.addEventListener("wheel", event => {
+            var _player;
+            const storeMenu = document.getElementById("storeMenu");
+            const allianceMenu = document.getElementById("allianceMenu");
+            //const player = player
+            if (storeMenu.style.display && storeMenu.style.display !== "none" || allianceMenu.style.display && allianceMenu.style.display !== "none") {
+                return;
+            }
+            if ((_player = player) === null || _player === undefined || !_player.alive || document.activeElement.tagName === "INPUT") {
+                return;
+            }
+            const power = 1.01;
+            if (event.deltaY > 0) {
+                if (maxScreenWidth <= 50000) {
+                    for (let i = 0; i < 25; i += 1) {
+                        setTimeout(() => {
+                            if (maxScreenWidth > 50000) {
+                                return;
+                            }
+                            maxScreenWidth *= power;
+                            maxScreenHeight *= power;
+                            resize();
+                        }, i * 5);
+                    }
+                }
+            } else if (maxScreenWidth >= 500) {
+                for (let i = 0; i < 25; i += 1) {
+                    setTimeout(() => {
+                        if (maxScreenWidth < 500) {
+                            return;
+                        }
+                        maxScreenWidth /= power;
+                        maxScreenHeight /= power;
+                        resize();
+                    }, i * 5);
+                }
+            }
+        });
 
             // SET INIT DATA:
             function setInitData(data) {
@@ -10051,6 +10108,7 @@ window.vultr = vultr;
                         renderWaterBodies(xOffset, yOffset, mainContext, (waterMult - 1) * 250);
                     }
 
+                    /*
                     // RENDER GRID:
                     mainContext.lineWidth = 4;
                     mainContext.strokeStyle = "#000";
@@ -10069,6 +10127,7 @@ window.vultr = vultr;
                         }
                     }
                     mainContext.stroke();
+                    */
 
                     // RENDER BOTTOM LAYER:
                     mainContext.globalAlpha = 1;
@@ -14962,11 +15021,11 @@ window.vultr = vultr;
             }
             module.exports.checkTrusted = function(callback) {
                 return function(ev) {
-                    if (ev && ev instanceof Event && module.exports.eventIsTrusted(ev)) {
+                    //if (ev && ev instanceof Event && module.exports.eventIsTrusted(ev)) {
                         callback(ev);
-                    } else {
+                    /*} else {
                         //console.error("Event is not trusted.", ev);
-                    }
+                    }*/
                 }
             }
             module.exports.randomString = function(length) {
