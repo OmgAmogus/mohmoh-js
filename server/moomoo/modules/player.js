@@ -5,9 +5,6 @@ import {
     encode
 } from "msgpack-lite";
 import { delay } from "./delay.js";
-import { projectileManager } from "./projectileManager.js";
-import { objectManager } from './objectManager.js';
-import { items } from "./items.js"
 
 var langFilter = new Filter();
 var newProfane = ['jew', 'black', 'baby', 'child', 'white', 'porn', 'pedo', 'trump', 'clinton', 'hitler', 'nazi', 'gay', 'pride', 'sex', 'pleasure', 'touch', 'poo', 'kids', 'rape', 'white power', 'nigga', 'nig nog', 'doggy', 'rapist', 'boner', 'nigger', 'nigg', 'finger', 'nogger', 'nagger', 'nig', 'fag', 'gai', 'pole', 'stripper', "penis", 'vagina', 'pussy', 'nazi', 'hitler', 'stalin', 'burn', 'chamber', 'cock', 'peen', 'dick', 'spick', 'nieger', 'die', 'satan', 'n|ig', 'nlg', 'cunt', 'c0ck', 'fag', 'lick', 'condom', 'anal', 'shit', 'phile', 'little', 'kids', 'free KR', 'tiny', 'sidney', 'ass', 'kill', '.io', '(dot)', '[dot]', 'mini', 'whiore', 'whore', 'faggot', 'github', '1337', '666', 'satan', 'senpa', 'discord', 'd1scord', 'mistik', '.io', 'senpa.io', 'sidney', 'sid', 'senpaio', 'vries', 'asa'];
@@ -48,17 +45,7 @@ export class Player {
         this.tailIndex = id;
     }
 
-    constructor(id, sid, isBot = false, data = {}) {
-        const config = window.config || {};
-        const UTILS = window.UTILS || {};
-        const players = window.players || {};
-        const ais = window.ais || {};
-        const hats = window.hats || {}
-        const accessories = window.accessories || {}
-        const socket = window.socket || {}
-        const scoreCallback = window.scoreCallback || {};
-        const iconCallback = window.iconCallback || {};
-        
+    constructor(id, sid, config, UTILS, projectileManager, objectManager, players, ais, items, hats, accessories, socket, scoreCallback, iconCallback) {
         this.socket = socket;
         this.id = id;
         this.sid = sid;
@@ -163,7 +150,7 @@ export class Player {
         // RESET RESOURCES:
         this.resetResources = function(moofoll) {
             for (var i = 0; i < config.resourceTypes.length; ++i) {
-                this[config.resourceTypes[i]] = 999999;//moofoll ? 100 : 0;
+                this[config.resourceTypes[i]] = moofoll ? 100 : 0;
             }
         };
 
@@ -194,20 +181,20 @@ export class Player {
 
                 // VALIDATE NAME:
                 var name = data.name + "";
-                //name = name.slice(0, config.maxNameLength);
-                //name = name.replace(/[^\w:\(\)\/? -]+/gmi, " "); // USE SPACE SO WE CAN CHECK PROFANITY
-                //name = name.replace(/[^\x00-\x7F]/g, " ");
-                //name = name.trim();
+                name = name.slice(0, config.maxNameLength);
+                name = name.replace(/[^\w:\(\)\/? -]+/gmi, " "); // USE SPACE SO WE CAN CHECK PROFANITY
+                name = name.replace(/[^\x00-\x7F]/g, " ");
+                name = name.trim();
 
                 // CHECK IF IS PROFANE:
-                /*var isProfane = false;
+                var isProfane = false;
                 var convertedName = name.toLowerCase().replace(/\s/g, "").replace(/1/g, "i").replace(/0/g, "o").replace(/5/g, "s");
                 for (var word of langFilter.list) {
                     if (convertedName.indexOf(word) != -1) {
                         isProfane = true;
                         break;
                     }
-                }*/
+                }
                 if (name.length > 0 && !isProfane) {
                     this.name = name;
                 }
@@ -274,10 +261,6 @@ export class Player {
                 this.ping_cooldown -= delta;
             }
 
-            if (this.onupdate) {
-            this.onupdate.call(this, delta);
-            }
-            
             // SHAME SHAME SHAME:
             if (this.shameTimer > 0) {
                 this.skinIndex = 45;
@@ -417,15 +400,14 @@ export class Player {
             }
 
             // DECEL:
-            const decel = mathPOW(config.playerDecel, delta);
             if (this.xVel) {
-                this.xVel *= decel;
+                this.xVel *= mathPOW(config.playerDecel, delta);
                 if (this.xVel <= 0.01 && this.xVel >= -0.01) {
                     this.xVel = 0;
                 }
             }
             if (this.yVel) {
-                this.yVel *= decel;
+                this.yVel *= mathPOW(config.playerDecel, delta);
                 if (this.yVel <= 0.01 && this.yVel >= -0.01) {
                     this.yVel = 0;
                 }
@@ -570,16 +552,16 @@ export class Player {
         this.kill = function(doer) {
             if (doer && doer.alive) {
                 doer.kills++;
-                /*if (doer.skin && doer.skin.goldSteal) {
+                if (doer.skin && doer.skin.goldSteal) {
                     scoreCallback(doer, Math.round(this.points / 2));
                 } else {
                     scoreCallback(doer, Math.round(this.age * 100 * (doer.skin && doer.skin.kScrM ? doer.skin.kScrM : 1)));
-                }*/
+                }
                 doer.send("9", "kills", doer.kills, 1);
             }
             this.alive = false;
             this.send("11");
-            //iconCallback();
+            iconCallback();
         };
 
         // ADD RESOURCE:
@@ -733,7 +715,7 @@ export class Player {
 
             // CHECK IF HIT PLAYER:
             for (var i = 0; i < players.length + ais.length; ++i) {
-                tmpObj = players[i];
+                tmpObj = players[i] || ais[i - players.length];
                 if (tmpObj != this && tmpObj.alive && !(tmpObj.team && tmpObj.team == this.team)) {
                     tmpDist = UTILS.getDistance(this.x, this.y, tmpObj.x, tmpObj.y) - tmpObj.scale * 1.8;
                     if (tmpDist <= items.weapons[this.weaponIndex].range) {
