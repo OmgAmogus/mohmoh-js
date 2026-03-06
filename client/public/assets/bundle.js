@@ -8041,3591 +8041,3160 @@ window.vultr = vultr;
         /***/
         (function(module, exports, __webpack_require__) {
 
-"use strict";
+            "use strict";
+
+            window.loadedScript = true;
+
+            // ENV:
+            var isProd = false;
+
+            // IMPORTS:
+            __webpack_require__( /*! ./libs/modernizr.js */ "./src/js/libs/modernizr.js");
+            var io = __webpack_require__( /*! ./libs/io-client.js */ "./src/js/libs/io-client.js");
+            var UTILS = __webpack_require__( /*! ./libs/utils.js */ "./src/js/libs/utils.js");
+            var animText = __webpack_require__( /*! ./libs/animText.js */ "./src/js/libs/animText.js");
+            var config = __webpack_require__( /*! ./config.js */ "./src/js/config.js");
+            var GameObject = __webpack_require__( /*! ./data/gameObject.js */ "./src/js/data/gameObject.js");
+            var items = __webpack_require__( /*! ./data/items.js */ "./src/js/data/items.js");
+            var MapManager = __webpack_require__( /*! ./data/mapManager.js */ "./src/js/data/mapManager.js");
+            var ObjectManager = __webpack_require__( /*! ./data/objectManager.js */ "./src/js/data/objectManager.js");
+            var Player = __webpack_require__( /*! ./data/player.js */ "./src/js/data/player.js");
+            var store = __webpack_require__( /*! ./data/store.js */ "./src/js/data/store.js");
+            var Projectile = __webpack_require__( /*! ./data/projectile.js */ "./src/js/data/projectile.js");
+            var ProjectileManager = __webpack_require__( /*! ./data/projectileManager.js */ "./src/js/data/projectileManager.js");
+            var SoundManager = __webpack_require__( /*! ./libs/soundManager.js */ "./src/js/libs/soundManager.js").obj;
+            var textManager = new animText.TextManager();
+
+            // VULTR:
+            var VultrClient = __webpack_require__( /*! ../../vultr/VultrClient.js */ "./vultr/VultrClient.js");
+            var vultrClient = new VultrClient("moomoo.io", 3000, config.maxPlayers, 5, false);
+            vultrClient.debugLog = false;
+
+            // URL PARAMS:
+            function getParameterByName(name, url) {
+                if (!url) {
+                    url = window.location.href;
+                }
+                name = name.replace(/[\[\]]/g, "\\$&");
+                var regex = new RegExp("[?&]" + name + "(=([^&#]*)|&|#|$)"),
+                    results = regex.exec(url);
+                if (!results) return null;
+                if (!results[2]) return '';
+                return decodeURIComponent(results[2].replace(/\+/g, " "));
+            }
+
+            // SOCKET & CONNECTION:
+            var connected = false;
+            var startedConnecting = false;
+
+            function connectSocketIfReady() {
+
+                // MAKE SURE IT'S READY:
+                if (!didLoad || !captchaReady) return;
+                startedConnecting = true;
+
+                setTimeout(() => {
+
+                    // GET TOKEN:
+                    if (isProd) {
+                        window.grecaptcha.execute("6LevKusUAAAAAAFknhlV8sPtXAk5Z5dGP5T2FYIZ", {
+                            action: "homepage"
+                        }).then(function(token) {
+                            // CONNECT SOCKET:
+                            connectSocket(token);
+                        });
+                    } else {
+                        // CONNECT SOCKET:
+                        connectSocket(null);
+                    }
+
+                }, 3000);
+
+            }
+
+            function connectSocket(token) {
+
+                // CONNECT SOCKET:
+                (() => {
+
+                    if (window.connected_count > 0) {
+                        return void console.info("bundle detected");
+                    }
+
+                    // CONNECT:
+                    io.connect(origin, function(error) {
+                        pingSocket();
+                        setInterval(() => pingSocket(), 2500);
+
+                        if (error) {
+                            disconnect(error);
+                        } else {
+                            connected = true;
+                            startGame();
+                        }
+                    }, {
+                        "id": setInitData,
+                        "d": disconnect,
+                        "1": setupGame,
+                        "2": addPlayer,
+                        "4": removePlayer,
+                        "33": updatePlayers,
+                        "5": updateLeaderboard,
+                        "6": loadGameObject,
+                        "a": loadAI,
+                        "aa": animateAI,
+                        "7": gatherAnimation,
+                        "8": wiggleGameObject,
+                        "sp": shootTurret,
+                        "9": updatePlayerValue,
+                        "h": updateHealth,
+                        "11": killPlayer,
+                        "12": killObject,
+                        "13": killObjects,
+                        "14": updateItemCounts,
+                        "15": updateAge,
+                        "16": updateUpgrades,
+                        "17": updateItems,
+                        "18": addProjectile,
+                        "19": remProjectile,
+                        "20": serverShutdownNotice,
+                        "ac": addAlliance,
+                        "ad": deleteAlliance,
+                        "an": allianceNotification,
+                        "st": setPlayerTeam,
+                        "sa": setAlliancePlayers,
+                        "us": updateStoreItems,
+                        "ch": receiveChat,
+                        "mm": updateMinimap,
+                        "t": showText,
+                        "p": pingMap,
+                        "pp": pingSocketResponse
+                    });
+
+                    // SERVER LIST:
+                    setupServerStatus();
+
+                    // CHECK AGAIN AFTER DELAY:
+                    setTimeout(() => updateServerList(), 3 * 1000);
+                })();
+            }
+
+            function socketReady() {
+                return (io.connected);
+            }
+
+            function joinParty() {
+                var currentKey = serverBrowser.value;
+                var key = prompt("party key", currentKey);
+                if (key) {
+                    window.onbeforeunload = undefined; // Don't ask to leave
+                    window.location.href = "/?server=" + key;
+                }
+            } /**/
+
+            // SOUND:
+            var Sound = new SoundManager(config, UTILS);
+
+            function toggleSound(active) {
+                if (active == undefined)
+                    active = !Sound.active;
+                Sound.active = active;
+                //Sound.toggleMute("menu", !active);
+                saveVal("moo_moosic", active ? 1 : 0);
+            }
+
+            // MATHS:
+            var mathPI = Math.PI;
+            var mathPI2 = mathPI * 2;
+            var mathPI3 = mathPI * 3;
+            Math.lerpAngle = function(value1, value2, amount) {
+                var difference = Math.abs(value2 - value1);
+                if (difference > mathPI) {
+                    if (value1 > value2) {
+                        value2 += mathPI2;
+                    } else {
+                        value1 += mathPI2;
+                    }
+                }
+                var value = (value2 + ((value1 - value2) * amount));
+                if (value >= 0 && value <= mathPI2)
+                    return value;
+                return (value % mathPI2);
+            }
+
+            // REOUNDED RECTANGLE:
+            CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+                if (w < 2 * r) r = w / 2;
+                if (h < 2 * r) r = h / 2;
+                if (r < 0)
+                    r = 0;
+                this.beginPath();
+                this.moveTo(x + r, y);
+                this.arcTo(x + w, y, x + w, y + h, r);
+                this.arcTo(x + w, y + h, x, y + h, r);
+                this.arcTo(x, y + h, x, y, r);
+                this.arcTo(x, y, x + w, y, r);
+                this.closePath();
+                return this;
+            }
+
+            // STORAGE:
+            var canStore;
+            if (typeof(Storage) !== "undefined") {
+                canStore = true;
+            }
+
+            function saveVal(name, val) {
+                if (canStore)
+                    localStorage.setItem(name, val);
+            }
+
+            function deleteVal(name) {
+                if (canStore)
+                    localStorage.removeItem(name);
+            }
+
+            function getSavedVal(name) {
+                if (canStore)
+                    return localStorage.getItem(name);
+                return null;
+            }
+
+            // TERMS:
+
+            // GLOBAL VALUES:
+            var moofoll = getSavedVal("moofoll");
+
+            function follmoo() {
+                if (!moofoll) {
+                    moofoll = true;
+                    saveVal("moofoll", 1);
+                }
+            }
+            var useNativeResolution;
+            var showPing;
+            var playSound;
+            var pixelDensity = 1;
+            var delta, now, lastSent;
+            var lastUpdate = Date.now();
+            var keys, attackState;
+            var ais = [];
+            var players = [];
+            var alliances = [];
+            var gameObjects = [];
+            var projectiles = [];
+            var projectileManager = new ProjectileManager(Projectile, projectiles, players, ais, objectManager, items, config, UTILS);
+            var AiManager = __webpack_require__( /*! ./data/aiManager.js */ "./src/js/data/aiManager.js");
+            var AI = __webpack_require__( /*! ./data/ai.js */ "./src/js/data/ai.js");
+            var aiManager = new AiManager(ais, AI, players, items, null, config, UTILS);
+            var player, playerSID, tmpObj;
+            var waterMult = 1;
+            var waterPlus = 0;
+            var mouseX = 0;
+            var mouseY = 0;
+            var controllingTouch = {
+                id: -1,
+                startX: 0,
+                startY: 0,
+                currentX: 0,
+                currentY: 0
+            };
+            var attackingTouch = {
+                id: -1,
+                startX: 0,
+                startY: 0,
+                currentX: 0,
+                currentY: 0
+            };
+            var camX, camY;
+            var tmpDir;
+            var skinColor = 0;
+            var maxScreenWidth = config.maxScreenWidth;
+            var maxScreenHeight = config.maxScreenHeight;
+            var screenWidth, screenHeight;
+            var inGame = false;
+            var adContainer = document.getElementById("ad-container");
+            var mainMenu = document.getElementById("mainMenu");
+            var enterGameButton = document.getElementById("enterGame");
+            var promoImageButton = document.getElementById("promoImg");
+            var partyButton = document.getElementById("partyButton");
+            var joinPartyButton = document.getElementById("joinPartyButton");
+            var settingsButton = document.getElementById("settingsButton");
+            var settingsButtonTitle = settingsButton.getElementsByTagName("span")[0];
+            var allianceButton = document.getElementById("allianceButton");
+            var storeButton = document.getElementById("storeButton");
+            var chatButton = document.getElementById("chatButton");
+            var gameCanvas = document.getElementById("gameCanvas");
+            var mainContext = gameCanvas.getContext("2d");
+            var serverBrowser = document.getElementById("serverBrowser");
+            var nativeResolutionCheckbox = document.getElementById("nativeResolution");
+            var showPingCheckbox = document.getElementById("showPing");
+            var playMusicCheckbox = document.getElementById("playMusic");
+            var pingDisplay = document.getElementById("pingDisplay");
+            var shutdownDisplay = document.getElementById("shutdownDisplay");
+            var menuCardHolder = document.getElementById("menuCardHolder");
+            var guideCard = document.getElementById("guideCard");
+            var loadingText = document.getElementById("loadingText");
+            var gameUI = document.getElementById("gameUI");
+            var actionBar = document.getElementById("actionBar");
+            var scoreDisplay = document.getElementById("scoreDisplay");
+            var foodDisplay = document.getElementById("foodDisplay");
+            var woodDisplay = document.getElementById("woodDisplay");
+            var stoneDisplay = document.getElementById("stoneDisplay");
+            var killCounter = document.getElementById("killCounter");
+            var leaderboardData = document.getElementById("leaderboardData");
+            var nameInput = document.getElementById("nameInput");
+            var itemInfoHolder = document.getElementById("itemInfoHolder");
+            var ageText = document.getElementById("ageText");
+            var ageBarBody = document.getElementById("ageBarBody");
+            var upgradeHolder = document.getElementById("upgradeHolder");
+            var upgradeCounter = document.getElementById("upgradeCounter");
+            var allianceMenu = document.getElementById("allianceMenu");
+            var allianceHolder = document.getElementById("allianceHolder");
+            var allianceManager = document.getElementById("allianceManager");
+            var mapDisplay = document.getElementById("mapDisplay");
+            var diedText = document.getElementById("diedText");
+            var skinColorHolder = document.getElementById("skinColorHolder");
+            var mapContext = mapDisplay.getContext("2d");
+            mapDisplay.width = 300;
+            mapDisplay.height = 300;
+            var storeMenu = document.getElementById("storeMenu");
+            var storeHolder = document.getElementById("storeHolder");
+            var noticationDisplay = document.getElementById("noticationDisplay");
+            var hats = store.hats;
+            var accessories = store.accessories;
+            var objectManager = new ObjectManager(GameObject, gameObjects, UTILS, config);
+            var outlineColor = "#525252";
+            var darkOutlineColor = "#3d3f42";
+            var outlineWidth = 5.5;
+
+            // SET INIT DATA:
+            function setInitData(data) {
+                alliances = data.teams;
+            }
+
+            // YOUTUBERS:
 
 
-window.loadedScript = true;
+            // ON LOAD:
+            var inWindow = true;
+            var didLoad = false;
+            var captchaReady = false;
+            captchaReady = true;
+            !window.onblur && (window.onblur = function() {
+                inWindow = false;
+            });
+            !window.onfocus && (window.onfocus = function() {
+                inWindow = true;
+                if (player && player.alive) {
+                    resetMoveDir();
+                }
+            });
+            !window.onload && (window.onload = function() {
+                didLoad = true;
+                connectSocketIfReady();
 
-    const Me = {
-    animationTime: 0,
-    land: null,
-    lava: null,
-    x: module.exports.volcanoLocationX,
-    y: module.exports.volcanoLocationY
-};
+                setTimeout(function() {
+                    if (!startedConnecting) {
+                        alert("Captcha failed to load");
+                        window.location.reload();
+                    }
+                }, 20 * 1000);
+            });
+            gameCanvas.oncontextmenu = function() {
+                return false;
+            };
 
-// ENV:
-var isProd = location.hostname !== "127.0.0.1" && !location.hostname.startsWith("192.168.");
+            function disconnect(reason) {
+                connected = false;
+                io.close();
+                showLoadingText(reason);
+            }
 
-// IMPORTS:
-__webpack_require__(/*! ./libs/modernizr.js */ "./src/js/libs/modernizr.js");
-var io = __webpack_require__(/*! ./libs/io-client.js */ "./src/js/libs/io-client.js");
-var UTILS2 = "https://raw.githubusercontent.com/N0obGdPro/moomoo.archive/refs/heads/main/js/libs/utils.js";
-var UTILS = __webpack_require__(/*! ./libs/utils.js */ "./src/js/libs/utils.js");
-var animText = __webpack_require__(/*! ./libs/animText.js */ "./src/js/libs/animText.js");
-var config = __webpack_require__(/*! ./config.js */ "./src/js/config.js");
-var GameObject = __webpack_require__(/*! ./data/gameObject.js */ "./src/js/data/gameObject.js");
-var items = __webpack_require__(/*! ./data/items.js */ "./src/js/data/items.js");
-var MapManager = __webpack_require__(/*! ./data/mapManager.js */ "./src/js/data/mapManager.js");
-var ObjectManager = __webpack_require__(/*! ./data/objectManager.js */ "./src/js/data/objectManager.js");
-var Player = __webpack_require__(/*! ./data/player.js */ "./src/js/data/player.js");
-var store = __webpack_require__(/*! ./data/store.js */ "./src/js/data/store.js");
-var Projectile = __webpack_require__(/*! ./data/projectile.js */ "./src/js/data/projectile.js");
-var ProjectileManager = __webpack_require__(/*! ./data/projectileManager.js */ "./src/js/data/projectileManager.js");
-var SoundManager = __webpack_require__(/*! ./libs/soundManager.js */ "./src/js/libs/soundManager.js").obj;
-var textManager = new animText.TextManager();
+            function showLoadingText(text) {
+                mainMenu.style.display = "block";
+                gameUI.style.display = "none";
+                menuCardHolder.style.display = "none";
+                diedText.style.display = "none";
+                loadingText.style.display = "block";
+                loadingText.innerHTML = text +
+                    "<a href='javascript:window.location.href=window.location.href' class='ytLink'>reload</a>";
+            }
 
-// VULTR:
-//var VultrClient = __webpack_require__(/*! ../../vultr/VultrClient.js */ "./vultr/VultrClient.js");
-//var vultrClient = new VultrClient("moomoo.io", 3000, config.maxPlayers, 5, false);
-//vultrClient.debugLog = false;
+            // BUTTON EVENTS:
+            function bindEvents() {
+                enterGameButton.onclick = UTILS.checkTrusted(function() {
+                    // SHOW AD TO START GAME:
+                    showPreAdIfReady();
+                });
+                UTILS.hookTouchEvents(enterGameButton);
+                promoImageButton.onclick = UTILS.checkTrusted(function() {
+                    openLink('https://krunker.io/?play=SquidGame_KB');
+                });
+                UTILS.hookTouchEvents(promoImageButton);
+                joinPartyButton.onclick = UTILS.checkTrusted(function() {
+                    setTimeout(function() {
+                        joinParty();
+                    }, 10);
+                });
+                UTILS.hookTouchEvents(joinPartyButton);
+                settingsButton.onclick = UTILS.checkTrusted(function() {
+                    toggleSettings();
+                });
+                UTILS.hookTouchEvents(settingsButton);
+                allianceButton.onclick = UTILS.checkTrusted(function() {
+                    toggleAllianceMenu();
+                });
+                UTILS.hookTouchEvents(allianceButton);
+                storeButton.onclick = UTILS.checkTrusted(function() {
+                    toggleStoreMenu();
+                });
+                UTILS.hookTouchEvents(storeButton);
+                chatButton.onclick = UTILS.checkTrusted(function() {
+                    toggleChat();
+                });
+                UTILS.hookTouchEvents(chatButton);
+                mapDisplay.onclick = UTILS.checkTrusted(function() {
+                    sendMapPing();
+                });
+                UTILS.hookTouchEvents(mapDisplay);
+            }
 
-// URL PARAMS:
-function getParameterByName(name, url) {
-    if (!url) {
-        url = window.location.href;
-    }
-    name = name.replace(/[\[\]]/g, "\\$&");
-    var regex = new RegExp("[?&]" + name + "(=([^&#]*)|&|#|$)"),
-        results = regex.exec(url);
-    if (!results) return null;
-    if (!results[2]) return '';
-    return decodeURIComponent(results[2].replace(/\+/g, " "));
-}
+            // SETUP SERVER SELECTOR:
+            var gamesPerServer = 1;
 
-// SOCKET & CONNECTION:
-var connected = false;
-var startedConnecting = false;
-window.OriginalWebSocket = window.WebSocket;
-            window.WebSocket = class {
-                constructor(wsAddress) {
-                    connectSocket(wsAddress);
+            function setupServerStatus() {
+                var tmpHTML = "";
+
+                // ADD SERVER SELECTOR:
+                var overallTotal = 0;
+                var regionCounter = 0;
+                for (var region in vultrClient.servers) {
+                    var serverList = vultrClient.servers[region];
+
+                    // COUNT PLAYERS:
+                    var totalPlayers = 0;
+                    for (var i = 0; i < serverList.length; i++) {
+                        for (var j = 0; j < serverList[i].games.length; j++) {
+                            totalPlayers += serverList[i].games[j].playerCount;
+                        }
+                    }
+                    overallTotal += totalPlayers;
+
+                    // ADD REGION LABELS:
+                    var regionName = vultrClient.regionInfo[region].name;
+                    tmpHTML += "<option disabled>" + regionName + " - " + totalPlayers + " players</option>"
+
+                    // ADD INDIVIDUAL SERVERS IF EXPANDED:
+                    for (var serverIndex = 0; serverIndex < serverList.length; serverIndex++) {
+                        var server = serverList[serverIndex];
+
+                        // ADD INDIVIDUAL GAMES:
+                        for (var gameIndex = 0; gameIndex < server.games.length; gameIndex++) {
+                            var game = server.games[gameIndex];
+                            var adjustedIndex = server.index * gamesPerServer + gameIndex + 1;
+                            var isSelected = vultrClient.server && vultrClient.server.region === server.region && vultrClient.server.index === server.index && vultrClient.gameIndex == gameIndex;
+                            var serverLabel = regionName + " " + adjustedIndex + " [" + Math.min(game.playerCount, config.maxPlayers) + "/" + config.maxPlayers + "]";
+                            // var itemClass = "menuSelector" + (isSelected ? " selectedMenuSelector" : "") + (game.isPrivate ? " privateMenuSelector" : "");
+                            // var onClick = game.isPrivate ? "" : "switchServer(" + region + "," + serverIndex + "," + gameIndex + ")";
+                            let serverID = vultrClient.stripRegion(region) + ":" + serverIndex + ":" + gameIndex;
+                            if (isSelected) partyButton.getElementsByTagName("span")[0].innerText = serverID;
+                            let selected = isSelected ? "selected" : "";
+                            tmpHTML += "<option value='" + serverID + "' " + selected + ">" + serverLabel + "</option>";
+                        }
+                    }
+
+                    // ADD BREAK AFTER EACH SERVER:
+                    tmpHTML += "<option disabled></option>";
+
+                    // INCREMENT COUNTER:
+                    regionCounter++;
+                }
+
+                // ADD TOTAL PLAYERS:
+                tmpHTML += "<option disabled>All Servers - " + overallTotal + " players</option>";
+
+                // SET HTML:
+                serverBrowser.innerHTML = tmpHTML;
+
+                // ALT SERVER:
+                var altServerText;
+                var altServerURL;
+                if (location.hostname == "sandbox.moomoo.io") {
+                    altServerText = "Back to MooMoo";
+                    altServerURL = "//moomoo.io/";
+                } else {
+                    altServerText = "Try the sandbox";
+                    altServerURL = "//sandbox.moomoo.io/";
+                }
+                const alt_server = document.getElementById("altServer");
+                if (!alt_server) return;
+                alt_server.innerHTML = "<a href='" + altServerURL + "'>" + altServerText + "<i class='material-icons' style='font-size:10px;vertical-align:middle'>arrow_forward_ios</i></a>";
+            }
+
+            function updateServerList() {
+                var xmlhttp = new XMLHttpRequest();
+                var url = "/serverData";
+                xmlhttp.onreadystatechange = function() {
+                    if (this.readyState == 4) {
+                        if (this.status == 200) {
+                            // Parse the text and set it to Vultr
+                            window.vultr = JSON.parse(this.responseText);
+                            vultrClient.processServers(vultr.servers);
+
+                            // Setup servers
+                            setupServerStatus();
+                        } else {
+                            console.error("Failed to load server data with status code:", this.status);
+                        }
+                    }
+                };
+                xmlhttp.open("GET", url, true);
+                xmlhttp.send();
+            }
+
+            // SERVER SELECTOR CHANGE LISTENER:
+            serverBrowser.addEventListener("change", UTILS.checkTrusted(function() {
+                let parts = serverBrowser.value.split(":");
+                vultrClient.switchServer(parts[0], parts[1], parts[2]);
+            }));
+
+            /*** START CPMSTAR ***/
+            var preContentContainer = document.getElementById("pre-content-container");
+            var preAdInterval = 1000 * 60 * 5; // 5 minutes
+            var preAdLastShowTime = 0;
+            var preAdGameCount = 0;
+
+            function showPreAdIfReady() {
+                // Make sure the ad should be shown
+                preAdGameCount++;
+                var validGame = preAdGameCount > 1;
+                var validTime = (Date.now() - preAdLastShowTime) > preAdInterval;
+                if (validGame && validTime) {
+                    preAdLastShowTime = Date.now();
+                    showPreAd();
+                } else {
+                    enterGame();
+                }
+            }
+
+            function showPreAd() {
+                // API FAILED TO LOAD:
+                if (!window.adsbygoogle) {
+                    return console.log("Failed to load video ad API");
+                    void enterGame();
+                }
+                // ATTEMPT TO LOAD OR SHOW:
+                // https://docs.google.com/document/d/e/2PACX-1vS9eMymhLHkiscofJ442dPIKmXIGD3X2bbSF723b-3Btfao70nE885OlEPkbcM2NfrRaitWL_7KtT6I/pub
+                window.adsbygoogle.push({
+                    type: "next",
+                    adBreakDone: () => {
+                        enterGame();
+                    }
+                })
+            }
+            window.adsbygoogle && window.adsbygoogle.push({
+                preloadAdBreaks: "on"
+            });
+            window.showPreAd = showPreAd;
+
+            function finishPreAd() {
+                // HIDE THE AD:
+                preContentContainer.style.display = "none";
+
+                // CHECK AD SUCCESS:
+                enterGame();
+            }
+            /*** END CPMSTAR ***/
+
+            /*** START PLAYWIRE ***/
+            // // ADS:
+            // var preAdInterval = 1000 * 60 * 5; // 5 minutes
+            // var preAdLastShowTime = 0;
+            // var preAdGameCount = 0;
+            // var pendingFinish = false;
+            // function showPreAd() {
+            //     // Don't show if has admob
+            //     if (window.admob) {
+            //         enterGame();
+            //         return;
+            //     }
+
+            //     // Make sure the ad should be shown
+            //     preAdGameCount++;
+            //     var validGame = preAdGameCount > 1;
+            //     var validTime = (Date.now() - preAdLastShowTime) > preAdInterval;
+            //     if (!validGame || !validTime) {
+            //         enterGame();
+            //         return;
+            //     }
+
+            //     // Set to pending finish
+            //     pendingFinish = true;
+
+            //     // Create the element
+            //     var script = document.createElement("script");
+            //     script.src = "//cdn.playwire.com/bolt/js/zeus/embed.js";
+            //     script.type = "text/javascript";
+            //     script.setAttribute("charset", "utf-8");
+            //     script.setAttribute("data-config", "//config.playwire.com/1020124/v2/pre_content.json");
+            //     script.setAttribute("data-width", "640px");
+            //     script.setAttribute("data-height", "360px");
+            //     script.setAttribute("data-id", "pre-content-player");
+            //     script.setAttribute("data-hidden-container", 'my-content');
+            //     script.setAttribute("data-onready", "window.boltEventHandlers");
+
+            //     // Add it to the ad container
+            //     var adContainer = document.getElementById("pre-content-container");
+            //     adContainer.style.display = "block";
+            //     adContainer.appendChild(script);
+
+            //     // Check if the ad was blocked
+            //     setTimeout(function() {
+            //         let adBlocked = document.getElementById("my-content").style.display != "none";
+            //         if (adBlocked) {
+            //             console.log("Ad blocked");
+            //             finishPreAd();
+            //         } else {
+            //             console.log("Ad not blocked");
+            //         }
+            //     }, 2.5 * 1000);
+
+            //     // Force skip ad after 30 seconds
+            //     setTimeout(function() {
+            //         finishPreAd();
+            //     }, 30 * 1000);
+            // }
+            // window.boltEventHandlers = function() {
+            //     Bolt.on("pre-content-player", "showHiddenContainer", function() {
+            //         finishPreAd();
+            //     });
+            // }
+            // function finishPreAd() {
+            //     if (pendingFinish) {
+            //         pendingFinish = false;
+
+            //         // Hide the ad
+            //         document.getElementById("pre-content-container").style.display = "none";
+
+            //         // Hide the content again
+            //         document.getElementById("my-content").style.display = "none";
+
+            //         // Set the ad show time
+            //         preAdLastShowTime = Date.now();
+
+            //         // Enter the game
+            //         enterGame();
+            //     }
+            // }
+            // function showPreAdIfReady() {
+            //     // Enter game if using admob; otherwise show pre-ad
+            //     if (window.admob) {
+            //         enterGame();
+            //     } else {
+            //         showPreAd();
+            //     }
+            // }
+            // window.showPreAd = showPreAd;
+            /*** END PLAYWIRE ***/
+
+            // SHOW ITEM INFO:
+            function showItemInfo(item, isWeapon, isStoreItem) {
+                if (player && item) {
+                    UTILS.removeAllChildren(itemInfoHolder);
+                    itemInfoHolder.classList.add("visible");
+                    // chatButton.classList.add("hide");
+                    UTILS.generateElement({
+                        id: "itemInfoName",
+                        text: UTILS.capitalizeFirst(item.name),
+                        parent: itemInfoHolder
+                    });
+                    UTILS.generateElement({
+                        id: "itemInfoDesc",
+                        text: item.desc,
+                        parent: itemInfoHolder
+                    });
+                    if (isStoreItem) {
+
+                    } else if (isWeapon) {
+                        UTILS.generateElement({
+                            class: "itemInfoReq",
+                            text: !item.type ? "primary" : "secondary",
+                            parent: itemInfoHolder
+                        });
+                    } else {
+                        for (var i = 0; i < item.req.length; i += 2) {
+                            UTILS.generateElement({
+                                class: "itemInfoReq",
+                                html: item.req[i] + "<span class='itemInfoReqVal'> x" + item.req[i + 1] + "</span>",
+                                parent: itemInfoHolder
+                            });
+                        }
+                        if (item.group.limit) {
+                            UTILS.generateElement({
+                                class: "itemInfoLmt",
+                                text: (player.itemCounts[item.group.id] || 0) + "/" + item.group.limit,
+                                parent: itemInfoHolder
+                            });
+                        }
+                    }
+                } else {
+                    itemInfoHolder.classList.remove("visible");
+                    // chatButton.classList.remove("hide");
+                }
+            }
+
+            // SHOW ALLIANCE MENU:
+            var allianceNotifications = [];
+            var alliancePlayers = [];
+
+            function allianceNotification(sid, name) {
+                allianceNotifications.push({
+                    sid: sid,
+                    name: name
+                });
+                updateNotifications();
+            }
+
+            function updateNotifications() {
+                if (allianceNotifications[0]) {
+                    var tmpN = allianceNotifications[0];
+                    UTILS.removeAllChildren(noticationDisplay);
+                    noticationDisplay.style.display = "block";
+                    UTILS.generateElement({
+                        class: "notificationText",
+                        text: tmpN.name,
+                        parent: noticationDisplay
+                    });
+                    UTILS.generateElement({
+                        class: "notifButton",
+                        html: "<i class='material-icons' style='font-size:28px;color:#cc5151;'>&#xE14C;</i>",
+                        parent: noticationDisplay,
+                        onclick: function() {
+                            aJoinReq(0);
+                        },
+                        hookTouch: true
+                    });
+                    UTILS.generateElement({
+                        class: "notifButton",
+                        html: "<i class='material-icons' style='font-size:28px;color:#8ecc51;'>&#xE876;</i>",
+                        parent: noticationDisplay,
+                        onclick: function() {
+                            aJoinReq(1);
+                        },
+                        hookTouch: true
+                    });
+                } else {
+                    noticationDisplay.style.display = "none";
+                }
+            }
+
+            function addAlliance(data) {
+                alliances.push(data);
+                if (allianceMenu.style.display == "block")
+                    showAllianceMenu();
+            }
+
+            function setPlayerTeam(team, isOwner) {
+                if (player) {
+                    player.team = team;
+                    player.isOwner = isOwner;
+                    if (allianceMenu.style.display == "block")
+                        showAllianceMenu();
+                }
+            }
+
+            function setAlliancePlayers(data) {
+                alliancePlayers = data;
+                if (allianceMenu.style.display == "block")
+                    showAllianceMenu();
+            }
+
+            function deleteAlliance(sid) {
+                for (var i = alliances.length - 1; i >= 0; i--) {
+                    if (alliances[i].sid == sid)
+                        alliances.splice(i, 1);
+                }
+                if (allianceMenu.style.display == "block")
+                    showAllianceMenu();
+            }
+
+            function toggleAllianceMenu() {
+                resetMoveDir();
+                if (allianceMenu.style.display != "block") {
+                    showAllianceMenu();
+                } else {
+                    allianceMenu.style.display = "none";
+                }
+            }
+
+            function showAllianceMenu() {
+                if (player && player.alive) {
+                    closeChat();
+                    storeMenu.style.display = "none";
+                    allianceMenu.style.display = "block";
+                    UTILS.removeAllChildren(allianceHolder);
+                    if (player.team) {
+                        for (var i = 0; i < alliancePlayers.length; i += 2) {
+                            (function(i) {
+                                var tmp = UTILS.generateElement({
+                                    class: "allianceItem",
+                                    style: "color:" + (alliancePlayers[i] == player.sid ? "#fff" : "rgba(255,255,255,0.6)"),
+                                    text: alliancePlayers[i + 1],
+                                    parent: allianceHolder
+                                });
+                                if (player.isOwner && alliancePlayers[i] != player.sid) {
+                                    UTILS.generateElement({
+                                        class: "joinAlBtn",
+                                        text: "Kick",
+                                        onclick: function() {
+                                            kickFromClan(alliancePlayers[i]);
+                                        },
+                                        hookTouch: true,
+                                        parent: tmp
+                                    });
+                                }
+                            })(i);
+                        }
+                    } else {
+                        if (alliances.length) {
+                            for (var i = 0; i < alliances.length; ++i) {
+                                (function(i) {
+                                    var tmp = UTILS.generateElement({
+                                        class: "allianceItem",
+                                        style: "color:" + (alliances[i].sid == player.team ? "#fff" : "rgba(255,255,255,0.6)"),
+                                        text: alliances[i].sid,
+                                        parent: allianceHolder
+                                    });
+                                    UTILS.generateElement({
+                                        class: "joinAlBtn",
+                                        text: "Join",
+                                        onclick: function() {
+                                            sendJoin(i);
+                                        },
+                                        hookTouch: true,
+                                        parent: tmp
+                                    });
+                                })(i);
+                            }
+                        } else {
+                            UTILS.generateElement({
+                                class: "allianceItem",
+                                text: "No Tribes Yet",
+                                parent: allianceHolder
+                            });
+                        }
+                    }
+                    UTILS.removeAllChildren(allianceManager);
+                    if (player.team) {
+                        UTILS.generateElement({
+                            class: "allianceButtonM",
+                            style: "width: 360px",
+                            text: player.isOwner ? "Delete Tribe" : "Leave Tribe",
+                            onclick: function() {
+                                leaveAlliance()
+                            },
+                            hookTouch: true,
+                            parent: allianceManager
+                        });
+                    } else {
+                        UTILS.generateElement({
+                            tag: "input",
+                            type: "text",
+                            id: "allianceInput",
+                            maxLength: 7,
+                            placeholder: "unique name",
+                            ontouchstart: function(ev) {
+                                ev.preventDefault();
+                                var newValue = prompt("unique name", ev.currentTarget.value);
+                                ev.currentTarget.value = newValue.slice(0, 7);
+                            },
+                            parent: allianceManager
+                        });
+                        UTILS.generateElement({
+                            tag: "div",
+                            class: "allianceButtonM",
+                            style: "width: 140px;",
+                            text: "Create",
+                            onclick: function() {
+                                createAlliance();
+                            },
+                            hookTouch: true,
+                            parent: allianceManager
+                        });
+                    }
+                }
+            }
+
+            function aJoinReq(join) {
+                io.send("11", allianceNotifications[0].sid, join);
+                allianceNotifications.splice(0, 1);
+                updateNotifications();
+            }
+
+            function kickFromClan(sid) {
+                io.send("12", sid);
+            }
+
+            function sendJoin(index) {
+                io.send("10", alliances[index].sid);
+            }
+
+            function createAlliance() {
+                io.send("8", document.getElementById("allianceInput").value);
+            }
+
+            function leaveAlliance() {
+                allianceNotifications = [];
+                updateNotifications();
+                io.send("9");
+            }
+
+            // window.testRateLimiting = function() {
+            //     setInterval(() => {
+            //         if (Math.random() > 0.5) {
+            //             io.send("8", "test");
+            //         } else {
+            //             io.send("9");
+            //         }
+            //     }, 50);
+            // }
+
+            // MINIMAP:
+            var lastDeath;
+            var minimapData;
+            var mapMarker;
+            var mapPings = [];
+            var tmpPing;
+
+            function MapPing() {
+                this.init = function(x, y) {
+                    this.scale = 0;
+                    this.x = x;
+                    this.y = y;
+                    this.active = true;
+                };
+                this.update = function(ctxt, delta) {
+                    if (this.active) {
+                        this.scale += 0.05 * delta;
+                        if (this.scale >= config.mapPingScale) {
+                            this.active = false;
+                        } else {
+                            ctxt.globalAlpha = (1 - Math.max(0, this.scale / config.mapPingScale));
+                            ctxt.beginPath();
+                            ctxt.arc((this.x / config.mapScale) * mapDisplay.width, (this.y / config.mapScale) *
+                                mapDisplay.width, this.scale, 0, 2 * Math.PI);
+                            ctxt.stroke();
+                        }
+                    }
                 };
             }
 
-            function connectSocket(wsAddress) {
-                // CONNECT:
-                io.connect(wsAddress, function(error) {
-                    pingSocket();
-                    setInterval(() => pingSocket(), 2500);
-
-                    if (error) {
-                        disconnect(error);
-                    } else {
-                        connected = true;
-                        startGame();
-                        enterGame();
-
-                        // DEFINE ENTER GAME BUTTON ON CLICK:
-                        enterGameButton.onclick = UTILS.checkTrusted(function() {
-                            // START GAME:
-                            io.connected && enterGame();
-                        });
-                        UTILS.hookTouchEvents(enterGameButton);
+            function pingMap(x, y) {
+                for (var i = 0; i < mapPings.length; ++i) {
+                    if (!mapPings[i].active) {
+                        tmpPing = mapPings[i];
+                        break;
                     }
-                }, {
-            A: setInitData,
-                    B: disconnect,
-                    C: setupGame,
-                    D: addPlayer,
-                    E: removePlayer,
-                    a: updatePlayers,
-                    G: updateLeaderboard,
-                    H: loadGameObject,
-                    I: loadAI,
-                    J: animateAI,
-                    K: gatherAnimation,
-                    L: wiggleGameObject,
-                    M: shootTurret,
-                    N: updatePlayerValue,
-                    O: updateHealth,
-                    P: killPlayer,
-                    Q: killObject,
-                    R: killObjects,
-                    S: updateItemCounts,
-                    T: updateAge,
-                    U: updateUpgrades,
-                    V: updateItems,
-                    X: addProjectile,
-                    Y: remProjectile,
-                    Z: serverShutdownNotice,
-                    g: addAlliance,
-                    "1": deleteAlliance,
-                    "2": allianceNotification,
-                    "3": setPlayerTeam,
-                    "4": setAlliancePlayers,
-                    "5": updateStoreItems,
-                    "6": receiveChat,
-                    "7": updateMinimap,
-                    "8": showText,
-                    "9": pingMap,
-                    "0": pingSocketResponse
-        });
-}
-function socketReady() {
-    return (io.connected);
-}
-function joinParty() {
-    var currentKey = serverBrowser.value;
-    var key = prompt("party key", currentKey);
-    if (key) {
-        window.onbeforeunload = undefined; // Don't ask to leave
-        window.location.href = "/?server=" + key;
-    }
-}/**/
-
-// SOUND:
-var Sound = new SoundManager(config, UTILS);
-function toggleSound(active) {
-    if (active == undefined)
-        active = !Sound.active;
-    Sound.active = active;
-    //Sound.toggleMute("menu", !active);
-    saveVal("moo_moosic", active?1:0);
-}
-
-// MATHS:
-var mathPI = Math.PI;
-var mathPI2 = mathPI * 2;
-var mathPI3 = mathPI * 3;
-Math.lerpAngle = function (value1, value2, amount) {
-    var difference = Math.abs(value2 - value1);
-    if (difference > mathPI) {
-        if (value1 > value2) {
-            value2 += mathPI2;
-        } else {
-            value1 += mathPI2;
-        }
-    }
-    var value = (value2 + ((value1 - value2) * amount));
-    if (value >= 0 && value <= mathPI2)
-        return value;
-    return (value % mathPI2);
-}
-
-// REOUNDED RECTANGLE:
-CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
-    if (w < 2 * r) r = w / 2;
-    if (h < 2 * r) r = h / 2;
-    if (r < 0)
-        r = 0;
-    this.beginPath();
-    this.moveTo(showPing4?(getRandomInt(-100,100)/10)+x+r:x+r, showPing4?(getRandomInt(-100,100)/10)+y:y);
-    this.arcTo(showPing4?(getRandomInt(-100,100)/10)+x+w:x+w, showPing4?(getRandomInt(-100,100)/10)+y:y, showPing4?(getRandomInt(-100,100)/10)+x+w:x+w, showPing4?(getRandomInt(-100,100)/10)+y+h:y+h, r);
-    this.arcTo(showPing4?(getRandomInt(-100,100)/10)+x+w:x+w, showPing4?(getRandomInt(-100,100)/10)+y+h:y+h, showPing4?(getRandomInt(-100,100)/10)+x:x, showPing4?(getRandomInt(-100,100)/10)+y+h:y+h, r);
-    this.arcTo(showPing4?(getRandomInt(-100,100)/10)+x:x, showPing4?(getRandomInt(-100,100)/10)+y+h:y+h, showPing4?(getRandomInt(-100,100)/10)+x:x, showPing4?(getRandomInt(-100,100)/10)+y:y, r);
-    this.arcTo(showPing4?(getRandomInt(-100,100)/10)+x:x, showPing4?(getRandomInt(-100,100)/10)+y:y, showPing4?(getRandomInt(-100,100)/10)+x+w:x+w, showPing4?(getRandomInt(-100,100)/10)+y:y, r);
-    this.closePath();
-    return this;
-}
-
-// STORAGE:
-var canStore;
-if (typeof(Storage) !== "undefined") {
-    canStore = true;
-}
-function saveVal(name, val) {
-    if (canStore)
-        localStorage.setItem(name, val);
-}
-function deleteVal(name) {
-    if (canStore)
-        localStorage.removeItem(name);
-}
-function getSavedVal(name) {
-    if (canStore)
-        return localStorage.getItem(name);
-    return null;
-}
-
-function gc(e, t, i, s, n, r, o, l, c) {
-    this.addProjectile = function(a, u, p, h, m, w, v, x, D) {
-        const k = r.projectiles[w];
-        let S;
-        for (let O = 0; O < t.length; ++O)
-            if (!t[O].active) {
-                S = t[O];
-                break
-            } return S || (S = new e(i, s, n, r, o, l, c), S.sid = t.length, t.push(S)), S.init(w, a, u, p, m, k.dmg, h, k.scale, v), S.ignoreObj = x, S.layer = D || k.layer, S.src = k.src, S
-    }
-}
-
-// TERMS:
-// GLOBAL VALUES:
-const R = {
-        groups: module.exports.groups,
-        projectiles: module.exports.projectiles,
-        weapons: module.exports.weapons,
-        list: module.exports.list
-    };
-let uo, $e, mt = 1,
-    be, It, yn, or = Date.now();
-var He;
-let Ee;
-const ye = [],
-    J = [];
-let Oe = [];
-const et = [],
-    Mt = [],
-    po = new gc(MapPing, Mt, J, ye, objectManager, R, config, config),
-    ar = new MapPing(ye, module.exports, J, R, null, config, config);
-let E, mo, y, ct = 1,
-    wn = 0,
-    go = 0,
-    yo = 0,
-    Re, _e, lr, fs = 0;
-const se = config.maxScreenWidth,
-    re = config.maxScreenHeight;
-let gt, yt, Jt = !1;
-var moofoll = getSavedVal("moofoll");
-function follmoo() {
-    if (!moofoll) {
-        moofoll = true;
-        saveVal("moofoll", 1);
-    }
-}
-var useNativeResolution;
-var showPing;
-var showPing2;
-var showPing3;
-var showPing4;
-var showPing5;
-var nightnessCurrent = 1;
-var nightnessSpeed = showPing5?(showPing4?0.005:0.000025):0;
-var nightnessMax = (showPing4?10:4.5);
-var playSound;
-var pixelDensity = 1;
-var delta, now, lastSent;
-var lastUpdate = Date.now();
-var keys, attackState;
-var ais = [];
-var players = [];
-var alliances = [];
-var gameObjects = [];
-var projectiles = [];
-var projectileManager = new ProjectileManager(Projectile, projectiles, players, ais, objectManager, items, config, UTILS);
-var AiManager = __webpack_require__(/*! ./data/aiManager.js */ "./src/js/data/aiManager.js");
-var AI = __webpack_require__(/*! ./data/ai.js */ "./src/js/data/ai.js");
-var aiManager = new AiManager(ais, AI, players, items, null, config, UTILS);
-var player, playerSID, tmpObj;
-var waterMult = 1;
-var waterPlus = 0;
-var waterMult2 = 1;
-var waterPlus2 = 0;
-var mouseX = 0;
-var mouseY = 0;
-var controllingTouch = {
-    id: -1,
-    startX: 0,
-    startY: 0,
-    currentX: 0,
-    currentY: 0
-};
-var attackingTouch = {
-    id: -1,
-    startX: 0,
-    startY: 0,
-    currentX: 0,
-    currentY: 0
-};
-var camX, camY;
-var tmpDir;
-var skinColor = 0;
-var maxScreenWidth = config.maxScreenWidth;
-var maxScreenHeight = config.maxScreenHeight;
-var screenWidth, screenHeight;
-var inGame = false;
-var adContainer = document.getElementById("ad-container");
-var mainMenu = document.getElementById("mainMenu");
-var enterGameButton = document.getElementById("enterGame");
-var promoImageButton = document.getElementById("promoImg");
-var partyButton = document.getElementById("partyButton");
-var joinPartyButton = document.getElementById("joinPartyButton");
-var settingsButton = document.getElementById("settingsButton");
-var settingsButtonTitle = settingsButton.getElementsByTagName("span")[0];
-var allianceButton = document.getElementById("allianceButton");
-var storeButton = document.getElementById("storeButton");
-var chatButton = document.getElementById("chatButton");
-var gameCanvas = document.getElementById("gameCanvas");
-var mainContext = gameCanvas.getContext("2d");
-var serverBrowser = document.getElementById("serverBrowser");
-var nativeResolutionCheckbox = document.getElementById("nativeResolution");
-var showPingCheckbox = document.getElementById("showPing");
-var playMusicCheckbox = document.getElementById("playMusic");
-var pingDisplay = document.getElementById("pingDisplay");
-var shutdownDisplay = document.getElementById("shutdownDisplay");
-var menuCardHolder = document.getElementById("menuCardHolder");
-var guideCard = document.getElementById("guideCard");
-var loadingText = document.getElementById("loadingText");
-var gameUI = document.getElementById("gameUI");
-var actionBar = document.getElementById("actionBar");
-var scoreDisplay = document.getElementById("scoreDisplay");
-var foodDisplay = document.getElementById("foodDisplay");
-var woodDisplay = document.getElementById("woodDisplay");
-var stoneDisplay = document.getElementById("stoneDisplay");
-var killCounter = document.getElementById("killCounter");
-var leaderboardData = document.getElementById("leaderboardData");
-var nameInput = document.getElementById("nameInput");
-var itemInfoHolder = document.getElementById("itemInfoHolder");
-var ageText = document.getElementById("ageText");
-var ageBarBody = document.getElementById("ageBarBody");
-var upgradeHolder = document.getElementById("upgradeHolder");
-var upgradeCounter = document.getElementById("upgradeCounter");
-var allianceMenu = document.getElementById("allianceMenu");
-var allianceHolder = document.getElementById("allianceHolder");
-var allianceManager = document.getElementById("allianceManager");
-var mapDisplay = document.getElementById("mapDisplay");
-var diedText = document.getElementById("diedText");
-// var skinColorHolder = document.getElementById("skinColorHolder");
-var mapContext = mapDisplay.getContext("2d");
-mapDisplay.width = 300;
-mapDisplay.height = 300;
-var storeMenu = document.getElementById("storeMenu");
-var storeHolder = document.getElementById("storeHolder");
-var noticationDisplay = document.getElementById("noticationDisplay");
-var hats = store.hats;
-var accessories = store.accessories;
-var objectManager = new ObjectManager(GameObject, gameObjects, UTILS, config);
-var outlineColor = "#525252";
-var darkOutlineColor = "#3d3f42";
-var outlineWidth = 5.5;
-
-var featuredYoutuber = document.getElementById("featuredYoutube");
-var youtuberList = [{
-        name: "Arena Closer",
-        link: "https://web.archive.org/web/20170316153051/https://www.youtube.com/channel/UCazucVSJqW-kiHMIhQhD-QQ",
-        cid: "UCazucVSJqW-kiHMIhQhD-QQ"
-    }, {
-        name: "Slith",
-        link: "https://web.archive.org/web/20170316153051/https://www.youtube.com/channel/UC64R30QVnhyM1DNaXdzrHxQ",
-        cid: "UC64R30QVnhyM1DNaXdzrHxQ"
-    }, {
-        name: "tong dak",
-        link: "https://web.archive.org/web/20170316153051/https://www.youtube.com/channel/UCKgwIPqrLyOi5_rRFo9C2oQ",
-        cid: "UCKgwIPqrLyOi5_rRFo9C2oQ"
-    }, {
-        name: "Godenot",
-        link: "https://web.archive.org/web/20170316153051/https://www.youtube.com/user/SirGodenot",
-        cid: "UCH0-0_0XNqkg8dTLYtFaWRg"
-    }];
-
-var tmpYoutuber = youtuberList[UTILS.randInt(0, youtuberList.length - 1)];
-
-    featuredYoutuber.innerHTML = "<a target='_blank' class='ytLink' href='" + tmpYoutuber.link + "'><i class='material-icons' style='vertical-align: top;'>&#xE064;</i> " + tmpYoutuber.name + "</a>";
-    document.getElementById("youtubeContainer").innerHTML = '<div class="g-ytsubscribe" data-channelid="' + tmpYoutuber.cid + '" data-layout="default" data-count="default"></div>';
-
-
-// SET INIT DATA:
-function setInitData(data) {
-    alliances = data.teams;
-}
-// ON LOAD:
-var inWindow = true;
-var didLoad = false;
-var captchaReady = false;
-window.onblur = function() {
-    inWindow = false;
-};
-window.onfocus = function() {
-    inWindow = true;
-    if (player && player.alive) {
-        resetMoveDir();
-    }
-};
-window.onload = function() {
-    didLoad = true;
-};
-window.captchaCallback = function() {
-    captchaReady = true;
-};
-gameCanvas.oncontextmenu = function() {
-    return false;
-};
-function disconnect(reason) {
-    connected = false;
-    io.close();
-    showLoadingText(reason);
-}
-function showLoadingText(text) {
-    mainMenu.style.display = "block";
-    gameUI.style.display = "none";
-    menuCardHolder.style.display = "none";
-    diedText.style.display = "none";
-    loadingText.style.display = "block";
-    loadingText.innerHTML = text +
-        "<a href='javascript:window.location.href=window.location.href' class='ytLink'>reload</a>";
-}
-
-// BUTTON EVENTS:
-function bindEvents() {
-    enterGameButton.onclick = UTILS.checkTrusted(function() {
-        // SHOW AD TO START GAME:
-        //showPreAdIfReady();
-    });
-    UTILS.hookTouchEvents(enterGameButton);
-    promoImageButton.onclick = UTILS.checkTrusted(function() {
-        openLink('https://krunker.io/?play=SquidGame_KB');
-    });
-    UTILS.hookTouchEvents(promoImageButton);
-    joinPartyButton.onclick = UTILS.checkTrusted(function() {
-        setTimeout(function() { joinParty(); }, 10);
-    });
-    UTILS.hookTouchEvents(joinPartyButton);
-    settingsButton.onclick = UTILS.checkTrusted(function() {
-        toggleSettings();
-    });
-    UTILS.hookTouchEvents(settingsButton);
-    allianceButton.onclick = UTILS.checkTrusted(function() {
-        toggleAllianceMenu();
-    });
-    UTILS.hookTouchEvents(allianceButton);
-    storeButton.onclick = UTILS.checkTrusted(function() {
-        toggleStoreMenu();
-    });
-    UTILS.hookTouchEvents(storeButton);
-    chatButton.onclick = UTILS.checkTrusted(function() {
-        toggleChat();
-    });
-    UTILS.hookTouchEvents(chatButton);
-    mapDisplay.onclick = UTILS.checkTrusted(function() {
-        sendMapPing();
-    });
-    UTILS.hookTouchEvents(mapDisplay);
-}
-
-// SHOW ITEM INFO:
-function showItemInfo(item, isWeapon, isStoreItem) {
-    if (player && item) {
-        UTILS.removeAllChildren(itemInfoHolder);
-        itemInfoHolder.classList.add("visible");
-        // chatButton.classList.add("hide");
-        UTILS.generateElement({
-            id: "itemInfoName",
-            text: UTILS.capitalizeFirst(item.name),
-            parent: itemInfoHolder
-        });
-        UTILS.generateElement({
-            id: "itemInfoDesc",
-            text: item.desc,
-            parent: itemInfoHolder
-        });
-        if (isStoreItem) {
-            UTILS.generateElement({
-                class: "itemInfoReq",
-                html: "gold <span class='itemInfoReqVal'> x" + item.price + "</span>",
-                parent: itemInfoHolder
-            });
-        } else if (isWeapon) {
-            UTILS.generateElement({
-                class: "itemInfoReq",
-                text: !item.type?"primary":"secondary",
-                parent: itemInfoHolder
-            });
-        } else {
-            for (var i = 0; i < item.req.length; i += 2) {
-                UTILS.generateElement({
-                    class: "itemInfoReq",
-                    html: item.req[i] + "<span class='itemInfoReqVal'> x" + item.req[i + 1] + "</span>",
-                    parent: itemInfoHolder
-                });
+                }
+                if (!tmpPing) {
+                    tmpPing = new MapPing();
+                    mapPings.push(tmpPing);
+                }
+                tmpPing.init(x, y);
             }
-            if (item.group.limit) {
-                UTILS.generateElement({
-                    class: "itemInfoLmt",
-                    text: (player.itemCounts[item.group.id]||0) + "/" + item.group.limit,
-                    parent: itemInfoHolder
-                });
-            }
-        }
-    } else {
-        itemInfoHolder.classList.remove("visible");
-        // chatButton.classList.remove("hide");
-    }
-}
 
-// SHOW ALLIANCE MENU:
-var allianceNotifications = [];
-var alliancePlayers = [];
-function allianceNotification(sid, name) {
-    allianceNotifications.push({
-        sid: sid,
-        name: name
-    });
-    updateNotifications();
-}
-function updateNotifications() {
-    if (allianceNotifications[0]) {
-        var tmpN = allianceNotifications[0];
-        UTILS.removeAllChildren(noticationDisplay);
-        noticationDisplay.style.display = "block";
-        UTILS.generateElement({
-            class: "notificationText",
-            text: tmpN.name,
-            parent: noticationDisplay
-        });
-        UTILS.generateElement({
-            class: "notifButton",
-            html: "<i class='material-icons' style='font-size:28px;color:#cc5151;'>&#xE14C;</i>",
-            parent: noticationDisplay,
-            onclick: function() { aJoinReq(0); },
-            hookTouch: true
-        });
-        UTILS.generateElement({
-            class: "notifButton",
-            html: "<i class='material-icons' style='font-size:28px;color:#8ecc51;'>&#xE876;</i>",
-            parent: noticationDisplay,
-            onclick: function() { aJoinReq(1); },
-            hookTouch: true
-        });
-    } else {
-        noticationDisplay.style.display = "none";
-    }
-}
-function addAlliance(data) {
-    alliances.push(data);
-    if (allianceMenu.style.display == "block")
-        showAllianceMenu();
-}
-function setPlayerTeam(team, isOwner) {
-    if (player) {
-        player.team = team;
-        player.isOwner = isOwner;
-        if (allianceMenu.style.display == "block")
-            showAllianceMenu();
-    }
-}
-function setAlliancePlayers(data) {
-    alliancePlayers = data;
-    if (allianceMenu.style.display == "block")
-        showAllianceMenu();
-}
-function deleteAlliance(sid) {
-    for (var i = alliances.length - 1; i >= 0; i--) {
-        if (alliances[i].sid == sid)
-            alliances.splice(i, 1);
-    }
-    if (allianceMenu.style.display == "block")
-        showAllianceMenu();
-}
-function toggleAllianceMenu() {
-    resetMoveDir();
-    if (allianceMenu.style.display != "block") {
-        showAllianceMenu();
-    } else {
-        allianceMenu.style.display = "none";
-    }
-}
-function showAllianceMenu() {
-    if (player && player.alive) {
-        closeChat();
-        storeMenu.style.display = "none";
-        allianceMenu.style.display = "block";
-        UTILS.removeAllChildren(allianceHolder);
-        if (player.team) {
-            for (var i = 0; i < alliancePlayers.length; i+=2) {
-                (function(i) {
-                    var tmp = UTILS.generateElement({
-                        class: "allianceItem",
-                        style: "color:" + (alliancePlayers[i]==player.sid ? "#fff" : "rgba(255,255,255,0.6)"),
-                        text: alliancePlayers[i+1],
-                        parent: allianceHolder
-                    });
-                    if (player.isOwner && alliancePlayers[i] != player.sid) {
-                        UTILS.generateElement({
-                            class: "joinAlBtn",
-                            text: "Kick",
-                            onclick: function() { kickFromClan(alliancePlayers[i]); },
-                            hookTouch: true,
-                            parent: tmp
-                        });
+            function updateMapMarker() {
+                if (!mapMarker)
+                    mapMarker = {};
+                mapMarker.x = player.x;
+                mapMarker.y = player.y;
+            }
+
+            function updateMinimap(data) {
+                minimapData = data;
+            }
+
+            function renderMinimap(delta) {
+                if (player && player.alive) {
+                    mapContext.clearRect(0, 0, mapDisplay.width, mapDisplay.height);
+
+                    // RENDER PINGS:
+                    mapContext.strokeStyle = "#fff";
+                    mapContext.lineWidth = 4;
+                    for (var i = 0; i < mapPings.length; ++i) {
+                        tmpPing = mapPings[i];
+                        tmpPing.update(mapContext, delta);
                     }
-                })(i);
+
+                    // RENDER PLAYERS:
+                    mapContext.globalAlpha = 1;
+                    mapContext.fillStyle = "#fff";
+                    renderCircle((player.x / config.mapScale) * mapDisplay.width,
+                        (player.y / config.mapScale) * mapDisplay.height, 7, mapContext, true);
+                    mapContext.fillStyle = "rgba(255,255,255,0.35)";
+                    if ( /*player.team && */ minimapData) {
+                        for (var i = 0; i < minimapData.length;) {
+                            renderCircle((minimapData[i] / config.mapScale) * mapDisplay.width,
+                                (minimapData[i + 1] / config.mapScale) * mapDisplay.height, 7, mapContext, true);
+                            i += 2;
+                        }
+                    }
+
+                    // DEATH LOCATION:
+                    if (lastDeath) {
+                        mapContext.fillStyle = "#fc5553";
+                        mapContext.font = "34px Hammersmith One";
+                        mapContext.textBaseline = "middle";
+                        mapContext.textAlign = "center";
+                        mapContext.fillText("x", (lastDeath.x / config.mapScale) * mapDisplay.width,
+                            (lastDeath.y / config.mapScale) * mapDisplay.height);
+                    }
+
+                    // MAP MARKER:
+                    if (mapMarker) {
+                        mapContext.fillStyle = "#fff";
+                        mapContext.font = "34px Hammersmith One";
+                        mapContext.textBaseline = "middle";
+                        mapContext.textAlign = "center";
+                        mapContext.fillText("x", (mapMarker.x / config.mapScale) * mapDisplay.width,
+                            (mapMarker.y / config.mapScale) * mapDisplay.height);
+                    }
+                }
             }
-        } else {
-            if (alliances.length) {
-                for (var i = 0; i < alliances.length; ++i) {
+
+            // STORE MENU:
+            var currentStoreIndex = 0;
+            var playerItems = {};
+
+            function changeStoreIndex(index) {
+                if (currentStoreIndex != index) {
+                    currentStoreIndex = index;
+                    generateStoreList();
+                }
+            }
+
+            function toggleStoreMenu() {
+                if (storeMenu.style.display != "block") {
+                    storeMenu.style.display = "block";
+                    allianceMenu.style.display = "none";
+                    closeChat();
+                    generateStoreList();
+                } else {
+                    storeMenu.style.display = "none";
+                }
+            }
+
+            function updateStoreItems(type, id, index) {
+                if (index) {
+                    if (!type)
+                        player.tails[id] = 1;
+                    else
+                        player.tailIndex = id;
+                } else {
+                    if (!type)
+                        player.skins[id] = 1;
+                    else
+                        player.skinIndex = id;
+                }
+                if (storeMenu.style.display == "block")
+                    generateStoreList();
+            }
+
+            function generateStoreList() {
+                if (player) {
+                    UTILS.removeAllChildren(storeHolder);
+                    var index = currentStoreIndex;
+                    var tmpArray = index ? accessories : hats;
+                    for (var i = 0; i < tmpArray.length; ++i) {
+                        if (!tmpArray[i].dontSell) {
+                            (function(i) {
+                                var tmp = UTILS.generateElement({
+                                    id: "storeDisplay" + i,
+                                    class: "storeItem",
+                                    onmouseout: function() {
+                                        showItemInfo();
+                                    },
+                                    onmouseover: function() {
+                                        showItemInfo(tmpArray[i], false, true);
+                                    },
+                                    parent: storeHolder
+                                });
+                                UTILS.hookTouchEvents(tmp, true);
+                                UTILS.generateElement({
+                                    tag: "img",
+                                    class: "hatPreview",
+                                    src: "../img/" + (index ? "accessories/access_" : "hats/hat_") + tmpArray[i].id + (tmpArray[i].topSprite ? "_p" : "") + ".png",
+                                    parent: tmp
+                                });
+                                UTILS.generateElement({
+                                    tag: "span",
+                                    text: tmpArray[i].name,
+                                    parent: tmp
+                                });
+                                if (index ? (!player.tails[tmpArray[i].id]) : (!player.skins[tmpArray[i].id])) {
+                                    UTILS.generateElement({
+                                        class: "joinAlBtn",
+                                        style: "margin-top: 5px",
+                                        text: "Buy",
+                                        onclick: function() {
+                                            storeBuy(tmpArray[i].id, index);
+                                        },
+                                        hookTouch: true,
+                                        parent: tmp
+                                    });
+                                    UTILS.generateElement({
+                                        tag: "span",
+                                        class: "itemPrice",
+                                        text: tmpArray[i].price,
+                                        parent: tmp
+                                    })
+                                } else if ((index ? player.tailIndex : player.skinIndex) == tmpArray[i].id) {
+                                    UTILS.generateElement({
+                                        class: "joinAlBtn",
+                                        style: "margin-top: 5px",
+                                        text: "Unequip",
+                                        onclick: function() {
+                                            storeEquip(0, index);
+                                        },
+                                        hookTouch: true,
+                                        parent: tmp
+                                    });
+                                } else {
+                                    UTILS.generateElement({
+                                        class: "joinAlBtn",
+                                        style: "margin-top: 5px",
+                                        text: "Equip",
+                                        onclick: function() {
+                                            storeEquip(tmpArray[i].id, index);
+                                        },
+                                        hookTouch: true,
+                                        parent: tmp
+                                    });
+                                }
+                            })(i);
+                        }
+                    }
+                }
+            }
+
+            function storeEquip(id, index) {
+                io.send("13c", 0, id, index);
+            }
+
+            function storeBuy(id, index) {
+                io.send("13c", 1, id, index);
+            }
+
+            // HIDE WINDOWS:
+            function hideAllWindows() {
+                storeMenu.style.display = "none";
+                allianceMenu.style.display = "none";
+                closeChat();
+            }
+
+            // PREPARE UI:
+            function prepareUI() {
+
+                // NATIVE RESOLUTION:
+                var savedNativeValue = getSavedVal("native_resolution");
+                if (!savedNativeValue) {
+                    setUseNativeResolution(typeof cordova !== "undefined"); // Only default to native if on mobile
+                } else {
+                    setUseNativeResolution(savedNativeValue == "true");
+                }
+
+                // SHOW PING:
+                showPing = getSavedVal("show_ping") == "true";
+                pingDisplay.hidden = !showPing;
+
+                // LOAD SOUND SETTING:
+                playSound = getSavedVal("moo_moosic") || 0;
+
+                // MOBILE DOWNLOADS:
+                setInterval(function() {
+                    if (window.cordova) {
+                        document.getElementById("downloadButtonContainer").classList.add("cordova");
+                        document.getElementById("mobileDownloadButtonContainer").classList.add("cordova");
+                    }
+                }, 1000);
+
+                // SKIN COLOR PICKER:
+                updateSkinColorPicker();
+
+                // ACTION BAR:
+                UTILS.removeAllChildren(actionBar);
+                for (var i = 0; i < (items.weapons.length + items.list.length); ++i) {
                     (function(i) {
-                        var tmp = UTILS.generateElement({
-                            class: "allianceItem",
-                            style: "color:" + (alliances[i].sid==player.team ? "#fff" : "rgba(255,255,255,0.6)"),
-                            text: alliances[i].sid,
-                            parent: allianceHolder
-                        });
                         UTILS.generateElement({
-                            class: "joinAlBtn",
-                            text: "Join",
-                            onclick: function() { sendJoin(i); },
-                            hookTouch: true,
-                            parent: tmp
+                            id: "actionBarItem" + i,
+                            class: "actionBarItem",
+                            style: "display:none",
+                            onmouseout: function() {
+                                showItemInfo();
+                            },
+                            parent: actionBar
                         });
                     })(i);
                 }
-            } else {
-                UTILS.generateElement({
-                    class: "allianceItem",
-                    text: "No Tribes Yet",
-                    parent: allianceHolder
+                for (var i = 0; i < (items.list.length + items.weapons.length); ++i) {
+                    (function(i) {
+                        var tmpCanvas = document.createElement('canvas');
+                        tmpCanvas.width = tmpCanvas.height = 66;
+                        var tmpContext = tmpCanvas.getContext('2d');
+                        tmpContext.translate((tmpCanvas.width / 2), (tmpCanvas.height / 2));
+                        tmpContext.imageSmoothingEnabled = false;
+                        tmpContext.webkitImageSmoothingEnabled = false;
+                        tmpContext.mozImageSmoothingEnabled = false;
+                        if (items.weapons[i]) {
+                            tmpContext.rotate((Math.PI / 4) + Math.PI);
+                            var tmpSprite = new Image();
+                            toolSprites[items.weapons[i].src] = tmpSprite;
+                            tmpSprite.onload = function() {
+                                this.isLoaded = true;
+                                var tmpPad = 1 / (this.height / this.width);
+                                var tmpMlt = (items.weapons[i].iPad || 1);
+                                tmpContext.drawImage(this, -(tmpCanvas.width * tmpMlt * config.iconPad * tmpPad) / 2, -(tmpCanvas.height * tmpMlt * config.iconPad) / 2,
+                                    tmpCanvas.width * tmpMlt * tmpPad * config.iconPad, tmpCanvas.height * tmpMlt * config.iconPad);
+                                tmpContext.fillStyle = "rgba(0, 0, 70, 0.1)";
+                                tmpContext.globalCompositeOperation = "source-atop";
+                                tmpContext.fillRect(-tmpCanvas.width / 2, -tmpCanvas.height / 2, tmpCanvas.width, tmpCanvas.height);
+                                document.getElementById('actionBarItem' + i).style.backgroundImage = "url(" + tmpCanvas.toDataURL() + ")";
+                            };
+                            tmpSprite.src = ".././img/weapons/" + items.weapons[i].src + ".png";
+                            var tmpUnit = document.getElementById('actionBarItem' + i);
+                            tmpUnit.onmouseover = UTILS.checkTrusted(function() {
+                                showItemInfo(items.weapons[i], true);
+                            });
+                            tmpUnit.onclick = UTILS.checkTrusted(function() {
+                                selectToBuild(i, true);
+                            });
+                            UTILS.hookTouchEvents(tmpUnit);
+                        } else {
+                            var tmpSprite = getItemSprite(items.list[i - items.weapons.length], true);
+                            var tmpScale = Math.min(tmpCanvas.width - config.iconPadding, tmpSprite.width);
+                            tmpContext.globalAlpha = 1;
+                            tmpContext.drawImage(tmpSprite, -tmpScale / 2, -tmpScale / 2, tmpScale, tmpScale);
+                            tmpContext.fillStyle = "rgba(0, 0, 70, 0.1)";
+                            tmpContext.globalCompositeOperation = "source-atop";
+                            tmpContext.fillRect(-tmpScale / 2, -tmpScale / 2, tmpScale, tmpScale);
+                            document.getElementById('actionBarItem' + i).style.backgroundImage = "url(" + tmpCanvas.toDataURL() + ")";
+                            var tmpUnit = document.getElementById('actionBarItem' + i);
+                            tmpUnit.onmouseover = UTILS.checkTrusted(function() {
+                                showItemInfo(items.list[i - items.weapons.length]);
+                            });
+                            tmpUnit.onclick = UTILS.checkTrusted(function() {
+                                selectToBuild(i - items.weapons.length);
+                            });
+                            UTILS.hookTouchEvents(tmpUnit);
+                        }
+                    })(i);
+                }
+
+                // MOBILE NAME INPUT:
+                nameInput.ontouchstart = UTILS.checkTrusted(function(e) {
+                    e.preventDefault();
+                    var newValue = prompt("enter name", e.currentTarget.value);
+                    e.currentTarget.value = newValue.slice(0, 15);
                 });
+
+                // SETTINGS:
+                nativeResolutionCheckbox.checked = useNativeResolution;
+                nativeResolutionCheckbox.onchange = UTILS.checkTrusted(function(e) {
+                    setUseNativeResolution(e.target.checked);
+                });
+                showPingCheckbox.checked = showPing;
+                showPingCheckbox.onchange = UTILS.checkTrusted(function(e) {
+                    showPing = showPingCheckbox.checked;
+                    pingDisplay.hidden = !showPing;
+                    saveVal("show_ping", showPing ? "true" : "false");
+                });
+
+                // PLAY MENU SOUND:
+                // Sound.play("menu", 1, true);
             }
-        }
-        UTILS.removeAllChildren(allianceManager);
-        if (player.team) {
-            UTILS.generateElement({
-                class: "allianceButtonM",
-                style: "width: 360px",
-                text: player.isOwner? "Delete Tribe" : "Leave Tribe",
-                onclick: function() { leaveAlliance() },
-                hookTouch: true,
-                parent: allianceManager
-            });
-        } else {
-            UTILS.generateElement({
-                tag: "input",
-                type: "text",
-                id: "allianceInput",
-                maxLength: 7,
-                placeholder: "unique name",
-                ontouchstart: function(ev) {
-                    ev.preventDefault();
-                    var newValue = prompt("unique name", ev.currentTarget.value);
-                    ev.currentTarget.value = newValue.slice(0, 7);
-                },
-                parent: allianceManager
-            });
-            UTILS.generateElement({
-                tag: "div",
-                class: "allianceButtonM",
-                style: "width: 140px;",
-                text: "Create",
-                onclick: function() { createAlliance(); },
-                hookTouch: true,
-                parent: allianceManager
-            });
-        }
-    }
-}
-function aJoinReq(join) {
-    io.send("11", allianceNotifications[0].sid, join);
-    allianceNotifications.splice(0, 1);
-    updateNotifications();
-}
-function kickFromClan(sid) {
-    io.send("12", sid);
-}
-function sendJoin(index) {
-    io.send("10", alliances[index].sid);
-}
-function createAlliance() {
-    io.send("8", document.getElementById("allianceInput").value);
-}
-function leaveAlliance() {
-    allianceNotifications = [];
-    updateNotifications();
-    io.send("9");
-}
 
-// window.testRateLimiting = function() {
-//     setInterval(() => {
-//         if (Math.random() > 0.5) {
-//             io.send("8", "test");
-//         } else {
-//             io.send("9");
-//         }
-//     }, 50);
-// }
-
-// MINIMAP:
-var lastDeath;
-var minimapData;
-var mapMarker;
-var mapPings = [];
-var tmpPing;
-function MapPing() {
-    this.init = function(x, y) {
-        this.scale = 0;
-        this.x = x;
-        this.y = y;
-        this.active = true;
-    };
-    this.update = function(ctxt, delta) {
-        if (this.active) {
-            this.scale += 0.05 * delta;
-            if (this.scale >= config.mapPingScale) {
-                this.active = false;
-            } else {
-                ctxt.globalAlpha = (1-Math.max(0, this.scale/config.mapPingScale));
-                ctxt.beginPath();
-                ctxt.arc((this.x / config.mapScale) * mapDisplay.width, (this.y / config.mapScale)
-                    * mapDisplay.width, this.scale, 0, 2 * Math.PI);
-                ctxt.stroke();
+            function updateItems(data, wpn) {
+                if (data) {
+                    if (wpn) player.weapons = data;
+                    else player.items = data;
+                }
+                for (var i = 0; i < items.list.length; ++i) {
+                    var tmpI = (items.weapons.length + i);
+                    document.getElementById("actionBarItem" + tmpI).style.display = (player.items.indexOf(items.list[i].id) >= 0) ? "inline-block" : "none";
+                }
+                for (var i = 0; i < items.weapons.length; ++i) {
+                    document.getElementById("actionBarItem" + i).style.display =
+                        (player.weapons[items.weapons[i].type] == items.weapons[i].id) ? "inline-block" : "none";
+                }
             }
-        }
-    };
-}
-function pingMap(x, y) {
-    for (var i = 0; i < mapPings.length; ++i) {
-        if (!mapPings[i].active) {
-            tmpPing = mapPings[i];
-            break;
-        }
-    }
-    if (!tmpPing) {
-        tmpPing = new MapPing();
-        mapPings.push(tmpPing);
-    }
-    tmpPing.init(x, y);
-}
-function updateMapMarker() {
-    if (!mapMarker)
-        mapMarker = {};
-    mapMarker.x = player.x;
-    mapMarker.y = player.y;
-}
-function updateMinimap(data) {
-    minimapData = data;
-}
-function renderMinimap(delta) {
-    if (player && player.alive) {
-        mapContext.clearRect(0, 0, mapDisplay.width, mapDisplay.height);
 
-        // RENDER PINGS:
-        //mapContext.strokeStyle = "#fff";
-        //mapContext.lineWidth = 4;
-        //for (var i = 0; i < mapPings.length; ++i) {
-            //tmpPing = mapPings[i];
-            //tmpPing.update(mapContext, delta);
-        //}
-
-        // RENDER PLAYERS:
-        mapContext.globalAlpha = 1;
-        mapContext.fillStyle = "#fff";
-        renderCircle((player.x/config.mapScale)*mapDisplay.width,
-            (player.y/config.mapScale)*mapDisplay.height, 7, mapContext, true);
-        mapContext.fillStyle = "rgba(255,255,255,0.35)";
-        if (player.team && minimapData) {
-            for (var i = 0; i < minimapData.length;) {
-                renderCircle((minimapData[i]/config.mapScale)*mapDisplay.width,
-                    (minimapData[i+1]/config.mapScale)*mapDisplay.height, 7, mapContext, true);
-                i+=2;
+            function setUseNativeResolution(useNative) {
+                useNativeResolution = useNative;
+                pixelDensity = useNative ? (window.devicePixelRatio || 1) : 1;
+                nativeResolutionCheckbox.checked = useNative;
+                saveVal("native_resolution", useNative.toString());
+                resize();
             }
-        }
 
-        // DEATH LOCATION:
-        //if (lastDeath) {
-        //    mapContext.fillStyle = "#fc5553";
-        //    mapContext.font = "34px Hammersmith One";
-        //    mapContext.textBaseline = "middle";
-        //    mapContext.textAlign = "center";
-        //    mapContext.fillText("x", (lastDeath.x/config.mapScale)*mapDisplay.width,
-        //        (lastDeath.y/config.mapScale)*mapDisplay.height);
-        //}
+            function updateGuide() {
+                if (usingTouch) {
+                    guideCard.classList.add("touch");
+                } else {
+                    guideCard.classList.remove("touch");
+                }
+            }
 
-        // MAP MARKER:
-        //if (mapMarker) {
-        //    mapContext.fillStyle = "#fff";
-        //    mapContext.font = "34px Hammersmith One";
-        //    mapContext.textBaseline = "middle";
-        //    mapContext.textAlign = "center";
-        //    mapContext.fillText("", (mapMarker.x/config.mapScale)*mapDisplay.width,
-        //        (mapMarker.y/config.mapScale)*mapDisplay.height);
-        //}
-    }
-}
+            // SETTINGS STUFF:
+            function toggleSettings() {
+                if (guideCard.classList.contains("showing")) {
+                    guideCard.classList.remove("showing");
+                    settingsButtonTitle.innerText = "Settings";
+                } else {
+                    guideCard.classList.add("showing");
+                    settingsButtonTitle.innerText = "Close";
+                }
+            }
 
-// STORE MENU:
-var currentStoreIndex = 0;
-var playerItems = {};
-function changeStoreIndex(index) {
-    if (currentStoreIndex != index) {
-        currentStoreIndex = index;
-        generateStoreList();
-    }
-}
-function toggleStoreMenu() {
-    if (storeMenu.style.display != "block") {
-        storeMenu.style.display = "block";
-        allianceMenu.style.display = "none";
-        closeChat();
-        generateStoreList();
-    } else {
-        storeMenu.style.display = "none";
-    }
-}
-function updateStoreItems(type, id, index) {
-    if (index) {
-        if (!type)
-            player.tails[id] = 1;
-        else
-            player.tailIndex = id;
-    } else {
-        if (!type)
-            player.skins[id] = 1;
-        else
-            player.skinIndex = id;
-    }
-    if (storeMenu.style.display == "block")
-        generateStoreList();
-}
-function generateStoreList() {
-    if (player) {
-        UTILS.removeAllChildren(storeHolder);
-        var index = currentStoreIndex;
-        var tmpArray = index?accessories:hats;
-        for (var i = 0; i < tmpArray.length; ++i) {
-            if (!tmpArray[i].dontSell) {
-                (function(i) {
-                    var tmp = UTILS.generateElement({
-                        id: "storeDisplay" + i,
-                        class: "storeItem",
-                        onmouseout: function() { showItemInfo(); },
-                        onmouseover: function() { showItemInfo(tmpArray[i], false, true); },
-                        parent: storeHolder
-                    });
-                    UTILS.hookTouchEvents(tmp, true);
-                    UTILS.generateElement({
-                        tag: "img",
-                        class: "hatPreview",
-                        src: "https://raw.githubusercontent.com/N0obGdPro/moomoo.archive/refs/heads/main/img/" + (index?"accessories/access_":"hats/hat_") + tmpArray[i].id + (tmpArray[i].topSprite?"_p":"") + ".png",
-                        parent: tmp
-                    });
-                    UTILS.generateElement({
-                        tag: "span",
-                        text: showPing4?(getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString()):tmpArray[i].name,
-                        parent: tmp
-                    });
-                    if (index?(!player.tails[tmpArray[i].id]):(!player.skins[tmpArray[i].id])) {
-                        UTILS.generateElement({
-                            class: "joinAlBtn",
-                            style: "margin-top: 5px",
-                            text: showPing4?(getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString()):"Buy",
-                            onclick: function() { storeBuy(tmpArray[i].id, index); },
-                            hookTouch: true,
-                            parent: tmp
-                        });
-                        UTILS.generateElement({
-                            tag: "span",
-                            class: "itemPrice",
-                            text: showPing4?(getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString()):tmpArray[i].price,
-                            parent: tmp
-                        })
-                    } else if ((index?player.tailIndex:player.skinIndex)==tmpArray[i].id) {
-                        UTILS.generateElement({
-                            class: "joinAlBtn",
-                            style: "margin-top: 5px",
-                            text: showPing4?(getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString()):"Unequip",
-                            onclick: function() { storeEquip(0, index); },
-                            hookTouch: true,
-                            parent: tmp
-                        });
+            // SELECT SKIN COLOR:
+            function updateSkinColorPicker() {
+                var tmpHTML = "";
+                for (var i = 0; i < config.skinColors.length; ++i) {
+                    if (i == skinColor) {
+                        tmpHTML += ("<div class='skinColorItem activeSkin' style='background-color:" +
+                            config.skinColors[i] + "' onclick='selectSkinColor(" + i + ")'></div>");
                     } else {
-                        UTILS.generateElement({
-                            class: "joinAlBtn",
-                            style: "margin-top: 5px",
-                            text: showPing4?(getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString()):"Equip",
-                            onclick: function() { storeEquip(tmpArray[i].id, index); },
-                            hookTouch: true,
-                            parent: tmp
-                        });
+                        tmpHTML += ("<div class='skinColorItem' style='background-color:" +
+                            config.skinColors[i] + "' onclick='selectSkinColor(" + i + ")'></div>");
                     }
-                })(i);
+                }
+                skinColorHolder.innerHTML = tmpHTML;
             }
-        }
-    }
-}
-function storeEquip(id, index) {
-    io.send("13", 0, id, index);
-}
-function storeBuy(id, index) {
-    io.send("13c", 1, id, index);
-}
 
-// HIDE WINDOWS:
-function hideAllWindows() {
-    storeMenu.style.display = "none";
-    allianceMenu.style.display = "none";
-    closeChat();
-}
-
-// DEBUG
-function debug() {
-    itemSprites = [];
-    //objSprites = [];
-    gameObjectSprites = [];
-};
-
-function actionsetup() {
-
-    UTILS.removeAllChildren(actionBar);
-    for (var i = 0; i < (items.weapons.length+items.list.length); ++i) {
-        (function(i) {
-            UTILS.generateElement({
-                id: "actionBarItem" + i,
-                class: "actionBarItem",
-                style: "display:none",
-                onmouseout: function() {
-                    showItemInfo();
-                },
-                parent: actionBar
-            });
-             var tmpUnit = document.getElementById('actionBarItem' + i);
-                tmpUnit.onmouseover = UTILS.checkTrusted(function() {
-                    showItemInfo(items.list[i-items.weapons.length]);
-                });
-                tmpUnit.onclick = UTILS.checkTrusted(function() {
-                    selectToBuild(i-items.weapons.length);
-                });
-                UTILS.hookTouchEvents(tmpUnit);
-        })(i);
-    }
-    actionimagesetup()
-}
-
-function actionimagesetup() {
- for (var i = 0; i < (items.list.length + items.weapons.length); ++i) {
-        (function(i) {
-            var tmpCanvas = document.createElement('canvas');
-            tmpCanvas.width = tmpCanvas.height = 66;
-            var tmpContext = tmpCanvas.getContext('2d');
-            tmpContext.translate((tmpCanvas.width / 2), (tmpCanvas.height / 2));
-            tmpContext.imageSmoothingEnabled = false;
-            tmpContext.webkitImageSmoothingEnabled = false;
-            tmpContext.mozImageSmoothingEnabled = false;
-            if (items.weapons[i]) {
-                tmpContext.rotate((Math.PI/4)+Math.PI);
-                var tmpSprite = new Image();
-                toolSprites[items.weapons[i].src] = tmpSprite;
-                tmpSprite.onload = function() {
-                    this.isLoaded = true;
-                    var tmpPad = 1 / (this.height / this.width);
-                    var tmpMlt = (items.weapons[i].iPad || 1);
-                    tmpContext.drawImage(this, -(tmpCanvas.width*tmpMlt*config.iconPad*tmpPad)/2, -(tmpCanvas.height*tmpMlt*config.iconPad)/2,
-                        tmpCanvas.width*tmpMlt*tmpPad*config.iconPad, tmpCanvas.height*tmpMlt*config.iconPad);
-                    tmpContext.fillStyle = "rgba(0, 0, 70, 0)";
-                    tmpContext.globalCompositeOperation = "source-atop";
-                    tmpContext.fillRect(-tmpCanvas.width / 2, -tmpCanvas.height / 2, tmpCanvas.width, tmpCanvas.height);
-                    document.getElementById('actionBarItem' + i).style.backgroundImage = "url(" + tmpCanvas.toDataURL() + ")";
-                };
-
-
-
-    //if (items.weapons[i].src == "hammer_1" || items.weapons[i].src == "axe_1" || items.weapons[i].src == "sword_1" || items.weapons[i].src == "stick_1") {
-        tmpContext.lineWidth = 3;
-        tmpContext.translate(5, -9); // ORG: -10, 5
-        tmpContext.rotate(2.05 * Math.PI); // ORG: 1.3 * Math.PI
-        tmpContext.strokeStyle = outlineColor;
-        tmpContext.imageSmoothingEnabled = !1;
-        tmpContext.webkitImageSmoothingEnabled = !1;
-        tmpContext.mozImageSmoothingEnabled = !1;
-        renderTool(items.weapons[i], null, 0, 0, tmpContext, 0.35);
-        document.getElementById("actionBarItem" + i).style.backgroundImage = "url(" + tmpCanvas.toDataURL() + ")"; // old
-        // new document.getElementById('actionBarItem' + i).style.backgroundImage = "url(" + tmpCanvas.toDataURL() + ")";
-
-    //} else {
-    //    tmpSprite.src = ".././img/weapons/" + items.weapons[i].src + ".png";
-    //}
-
-
-
-
-            } else {
-                var tmpSprite = getItemSprite(items.list[i-items.weapons.length], true);
-                var tmpScale = Math.min(tmpCanvas.width - config.iconPadding, tmpSprite.width);
-                tmpContext.globalAlpha = 1;
-
-
-                tmpContext.drawImage(tmpSprite, -tmpScale / 2, -tmpScale / 2, tmpScale, tmpScale);
-
-                tmpContext.fillStyle = "rgba(0, 0, 70, 0)";
-                tmpContext.globalCompositeOperation = "source-atop";
-                tmpContext.fillRect(-tmpScale / 2, -tmpScale / 2, tmpScale, tmpScale);
-                document.getElementById('actionBarItem' + i).style.backgroundImage = "url(" + tmpCanvas.toDataURL() + ")";
-
+            function selectSkinColor(index) {
+                skinColor = index;
+                updateSkinColorPicker();
             }
-        })(i);
-    }
-}
 
-// PREPARE UI:
-function prepareUI() {
+            // CHAT STUFF:
+            var chatBox = document.getElementById("chatBox");
+            var chatHolder = document.getElementById("chatHolder");
 
-    document.getElementById("guideCard").innerHTML = '<div class="menuHeader">How To Play</div><div class="menuText">Collect resources around the map to build a village. Your Windmills generate points over time. But make sure to protect them from other players.</div><div class="menuHeader">Controls</div><div class="menuText">Movement: W, A, S, D<br/>Look: Mouse<br/>Select Item: 1-9 or Click<br/>Gather/Attack: Left Mouse or Space<br/></div><div class="menuHeader">Tips</div><div class="menuText">Hover on an item in your action bar for more information about the item.<br/><br/>Collect as many resources as you can before building your village.<br/><br/>Stay close to your village so you can protect it at all times.</div><div class="menuHeader">Settings Mod</div><div class="settingRadio"><input id="showPing2" type="checkbox">Alternated Sub Logo</div><div class="settingRadio"><input id="showPing3" type="checkbox" style="">Alternated Main Logo</div></div><div class="settingRadio"><input id="stylegame" type="checkbox">NoobGdPro’s Style ingame</div><div class="settingRadio"><input id="showPing5" type="checkbox" style="">Day/Night Cycle Mode</div></div><div class="settingRadio"><input id="showPing4" type="checkbox" style="">Corruption Mode</div></div>'
-
-    var showPingCheckbox2 = document.getElementById("showPing2");
-    var showPingCheckbox3 = document.getElementById("showPing3");
-    var showPingCheckbox4 = document.getElementById("showPing4");
-    var showPingCheckbox5 = document.getElementById("showPing5");
-    var stylegameCheckbox2 = document.getElementById("stylegame");
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
-    // NATIVE RESOLUTION:
-    /*var savedNativeValue = getSavedVal("native_resolution");
-    if (!savedNativeValue) {
-        setUseNativeResolution(typeof cordova !== "undefined"); // Only default to native if on mobile
-    } else {
-        setUseNativeResolution(savedNativeValue == "true");
-    }*/
-
-    // SHOW PING:
-    showPing = getSavedVal("alt_logo") == "true";
-    showPing2 = getSavedVal("alt_style") == "true";
-    showPing3 = getSavedVal("alt2_style") == "true";
-    showPing4 = getSavedVal("nightnessdarker") == "true";
-    showPing5 = getSavedVal("nightness_enabled") == "true";
-
-    //pingDisplay.hidden = !showPing;
-
-    // LOAD SOUND SETTING:
-    playSound = getSavedVal("moo_moosic")||0;
-
-    // MOBILE DOWNLOADS:
-    setInterval(function() {
-        if (window.cordova) {
-            document.getElementById("downloadButtonContainer").classList.add("cordova");
-            document.getElementById("mobileDownloadButtonContainer").classList.add("cordova");
-        }
-    }, 1000);
-
-    // SKIN COLOR PICKER:
-    // updateSkinColorPicker();
-
-    // ACTION BAR:
-    actionsetup()
-
-    // OLD
-    /* for (var a = "", b = 0; b < items.list.length; ++b)
-            a += "<div id='actionBarItem" + b + "' onmouseout='showItemInfo()' class='actionBarItem'><img draggable='false' id='actionBarIcon" + b + "'></img></div>";
-        for (b = 0; b < items.weapons.length; ++b)
-            var d = items.list.length + b
-              , a = a + ("<div id='actionBarItem" + d + "' class='actionBarItem' style='display:none'><img draggable='false' id='actionBarIcon" + d + "'></img></div>");
-        actionBar.innerHTML = a;
-        for (b = 0; b < items.list.length + items.weapons.length; ++b)
-            (function(a) {
-                var tmpCanvas = document.createElement('canvas'); // b
-            tmpCanvas.width = tmpCanvas.height = 66;
-            var tmpContext = tmpCanvas.getContext('2d'); // c
-                var c = tmpContext;
-                var b = tmpCanvas;
-                c.translate(b.width / 2, b.height / 2);
-                c.imageSmoothingEnabled = !1;
-                c.webkitImageSmoothingEnabled = !1;
-                c.mozImageSmoothingEnabled = !1;
-                if (items.list[a]) {
-                    var d = getItemSprite(items.list[a], !0)
-                      , h = Math.min(b.width - config.iconPadding, d.width);
-                    c.drawImage(d, -h / 2, -h / 2, h, h);
-                    document.getElementById("actionBarIcon" + a).src = b.toDataURL();
-                    b = document.getElementById("actionBarItem" + a);
-                    b.onmouseover = function() {
-                        showItemInfo(items.list[a])
+            function toggleChat() {
+                if (!usingTouch) {
+                    if (chatHolder.style.display == "block") {
+                        if (chatBox.value) {
+                            sendChat(chatBox.value);
+                        }
+                        closeChat();
+                    } else {
+                        storeMenu.style.display = "none";
+                        allianceMenu.style.display = "none";
+                        chatHolder.style.display = "block";
+                        chatBox.focus();
+                        resetMoveDir();
                     }
-                    ;
-                    b.onclick = function() {
-                        selectToBuild(a)
+                } else {
+                    setTimeout(function() { // Timeout lets the `hookTouchEvents` function exit
+                        var chatMessage = prompt("chat message");
+                        if (chatMessage) {
+                            sendChat(chatMessage);
+                        }
+                    }, 1);
+                }
+                chatBox.value = "";
+            }
+
+            function sendChat(message) {
+                io.send("ch", message.slice(0, 30));
+            }
+
+            function closeChat() {
+                chatBox.value = "";
+                chatHolder.style.display = "none";
+            }
+
+            // SEND MESSAGE:
+            var profanityList = ["cunt", "whore", "fuck", "shit", "faggot", "nigger",
+                "nigga", "dick", "vagina", "minge", "cock", "rape", "cum", "sex",
+                "tits", "penis", "clit", "pussy", "meatcurtain", "jizz", "prune",
+                "douche", "wanker", "damn", "bitch", "dick", "fag", "bastard"
+            ];
+
+            function checkProfanityString(text) {
+                var tmpString;
+                for (var i = 0; i < profanityList.length; ++i) {
+                    if (text.indexOf(profanityList[i]) > -1) {
+                        tmpString = "";
+                        for (var y = 0; y < profanityList[i].length; ++y) {
+                            tmpString += tmpString.length ? "o" : "M";
+                        }
+                        var re = new RegExp(profanityList[i], 'g');
+                        text = text.replace(re, tmpString);
                     }
-                } else
-                    c.lineWidth = 3,
-                    c.translate(-10, 5),
-                    c.rotate(1.3 * Math.PI),
-                    c.strokeStyle = outlineColor,
-                    renderTool(items.weapons[a - items.list.length], 0, 0, c, !0),
-                    document.getElementById("actionBarIcon" + a).src = b.toDataURL()
+                }
+                return text;
             }
-            )(b)*/
 
-    // MOBILE NAME INPUT:
-    nameInput.ontouchstart = UTILS.checkTrusted(function(e) {
-        e.preventDefault();
-        var newValue = prompt("enter name", e.currentTarget.value);
-        e.currentTarget.value = newValue.slice(0, 15);
-    });
-
-    // SETTINGS:
-    //nativeResolutionCheckbox.checked = useNativeResolution;
-    //nativeResolutionCheckbox.onchange = UTILS.checkTrusted(function(e) {
-    //    setUseNativeResolution(e.target.checked);
-    //});
-    showPingCheckbox2.checked = showPing;
-    showPingCheckbox2.onchange = UTILS.checkTrusted(function(e) {
-        showPing = showPingCheckbox2.checked;
-        //pingDisplay.hidden = !showPing;
-        logoalt.hidden = !showPing;
-        logoalt.innerHTML = showPing2?'Alternated':'Nostalgia';
-        document.getElementById("gameName").style = showPing ? 'font-size: 70px; text-shadow: 0 1px 0 #c4c4c4, 0 2px 0 #c4c4c4, 0 3px 0 #c4c4c4, 0 4px 0 #c4c4c4, 0 5px 0 #c4c4c4;' : '';
-
-        saveVal("alt_logo", showPing ? "true" : "false");
-    });
-    logoalt.hidden = !showPing;
-    document.getElementById("gameName").style = showPing ? 'font-size: 70px; text-shadow: 0 1px 0 #c4c4c4, 0 2px 0 #c4c4c4, 0 3px 0 #c4c4c4, 0 4px 0 #c4c4c4, 0 5px 0 #c4c4c4;' : '';
-
-    stylegameCheckbox2.checked = showPing2;
-    stylegameCheckbox2.onchange = UTILS.checkTrusted(function(e) {
-        showPing2 = stylegameCheckbox2.checked;
-        ctx.clearRect(0, 0, canvas.width, canvas.height)
-        //prepareMenuBackground();
-        //doUpdate();
-        debug()
-        logoalt.innerHTML = showPing2?'Alternated':'Nostalgia';
-        actionsetup()
-        saveVal("alt_style", showPing2 ? "true" : "false");
-    });
-
-     showPingCheckbox3.checked = showPing3;
-    showPingCheckbox3.onchange = UTILS.checkTrusted(function(e) {
-        showPing3 = showPingCheckbox3.checked;
-        //prepareMenuBackground();
-        //doUpdate();
-        document.title = (showPing3?'Moostalgia.io':'Moo Moo');
-        document.getElementById("gameName").innerHTML = (showPing3?'Moostalgia.io':'MooMoo.io');
-        document.getElementById("gameName").appendChild(logoalt);
-        saveVal("alt2_style", showPing3 ? "true" : "false");
-    });
-
-       showPingCheckbox4.checked = showPing4;
-    showPingCheckbox4.onchange = UTILS.checkTrusted(function(e) {
-        showPing4 = showPingCheckbox4.checked;
-        //prepareMenuBackground();
-        //doUpdate();
-        debug()
-        saveVal("nightnessdarker", showPing4 ? "true" : "false");
-    });
-
-        showPingCheckbox5.checked = showPing5;
-    showPingCheckbox5.onchange = UTILS.checkTrusted(function(e) {
-        showPing5 = showPingCheckbox5.checked;
-        //prepareMenuBackground();
-        //doUpdate();
-        debug()
-        saveVal("nightness_enabled", showPing5 ? "true" : "false");
-    });
-
-     document.getElementById("gameName").innerHTML = (showPing3?'Moostalgia.io':'MooMoo.io');
-     document.getElementById("gameName").appendChild(logoalt);
-     logoalt.innerHTML = showPing2?'Alternated':'Nostalgia';
-     if (showPing2) {
-         debug()
-         actionsetup()
-     }
-    waterMult2 = nightnessMax
-
-    document.title = (showPing3?'Moostalgia.io':'Moo Moo');
-
-    // PLAY MENU SOUND:
-     Sound.play("menu", 1, true);
-}
-function updateItems(data, wpn) {
-    if (data) {
-        if (wpn) player.weapons = data;
-        else player.items = data;
-    }
-    for (var i = 0; i < items.list.length; ++i) {
-        var tmpI = (items.weapons.length + i);
-        document.getElementById("actionBarItem" + tmpI).style.display = (player.items.indexOf(items.list[i].id)>=0)?"inline-block":"none";
-    }
-    for (var i = 0; i < items.weapons.length; ++i) {
-        document.getElementById("actionBarItem" + i).style.display =
-            (player.weapons[items.weapons[i].type]==items.weapons[i].id)?"inline-block":"none";
-    }
-}
-function setUseNativeResolution(useNative) {
-    useNativeResolution = useNative;
-    pixelDensity = useNative ? (window.devicePixelRatio || 1) : 1;
-    nativeResolutionCheckbox.checked = useNative;
-    saveVal("native_resolution", useNative.toString());
-    resize();
-}
-function updateGuide() {
-    if (usingTouch) {
-        guideCard.classList.add("touch");
-    } else {
-        guideCard.classList.remove("touch");
-    }
-}
-
-// SETTINGS STUFF:
-function toggleSettings() {
-    if (guideCard.classList.contains("showing")) {
-        guideCard.classList.remove("showing");
-        settingsButtonTitle.innerText = "Settings";
-    } else {
-        guideCard.classList.add("showing");
-        settingsButtonTitle.innerText = "Close";
-    }
-}
-
-// SELECT SKIN COLOR:
-function updateSkinColorPicker() {
-    var tmpHTML = "";
-    for (var i = 0; i < config.skinColors.length; ++i) {
-        if (i == skinColor) {
-            tmpHTML += ("<div class='skinColorItem activeSkin' style='background-color:" +
-                config.skinColors[i] + "' onclick='selectSkinColor(" + i + ")'></div>");
-        } else {
-            tmpHTML += ("<div class='skinColorItem' style='background-color:" +
-                config.skinColors[i] + "' onclick='selectSkinColor(" + i + ")'></div>");
-        }
-    }
-    skinColorHolder.innerHTML = tmpHTML;
-}
-function selectSkinColor(index) {
-    skinColor = index;
-    updateSkinColorPicker();
-}
-
-// CHAT STUFF:
-var chatBox = document.getElementById("chatBox");
-var chatHolder = document.getElementById("chatHolder");
-function toggleChat() {
-    if (!usingTouch) {
-        if (chatHolder.style.display == "block") {
-            if (chatBox.value) {
-                sendChat(chatBox.value);
+            function receiveChat(sid, message) {
+                var tmpPlayer = findPlayerBySID(sid);
+                if (tmpPlayer) {
+                    tmpPlayer.chatMessage = checkProfanityString(message);
+                    tmpPlayer.chatCountdown = config.chatCountdown;
+                }
             }
-            closeChat();
-        } else {
-            storeMenu.style.display = "none";
-            allianceMenu.style.display = "none";
-            chatHolder.style.display = "block";
-            chatBox.focus();
-            resetMoveDir();
-        }
-    } else {
-        setTimeout(function() { // Timeout lets the `hookTouchEvents` function exit
-            var chatMessage = prompt("chat message");
-            if (chatMessage) {
-                sendChat(chatMessage);
+
+            // RESIZE:
+            window.addEventListener('resize', UTILS.checkTrusted(resize));
+
+            function resize() {
+                screenWidth = window.innerWidth;
+                screenHeight = window.innerHeight;
+                var scaleFillNative = Math.max(screenWidth / maxScreenWidth, screenHeight / maxScreenHeight) * pixelDensity;
+                gameCanvas.width = screenWidth * pixelDensity;
+                gameCanvas.height = screenHeight * pixelDensity;
+                gameCanvas.style.width = screenWidth + "px";
+                gameCanvas.style.height = screenHeight + "px";
+                mainContext.setTransform(
+                    scaleFillNative, 0,
+                    0, scaleFillNative,
+                    (screenWidth * pixelDensity - (maxScreenWidth * scaleFillNative)) / 2,
+                    (screenHeight * pixelDensity - (maxScreenHeight * scaleFillNative)) / 2
+                );
             }
-        }, 1);
-    }
-    chatBox.value = "";
-}
-function sendChat(message) {
-    io.send("ch", message.slice(0, 30));
-}
-function closeChat() {
-    chatBox.value = "";
-    chatHolder.style.display = "none";
-}
+            resize();
 
-// SEND MESSAGE:
-var profanityList = ["cunt", "whore", "fuck", "shit", "faggot", "nigger",
-    "nigga", "dick", "vagina", "minge", "cock", "rape", "cum", "sex",
-    "tits", "penis", "clit", "pussy", "meatcurtain", "jizz", "prune",
-    "douche", "wanker", "damn", "bitch", "dick", "fag", "bastard"];
-function checkProfanityString(text) {
-    var tmpString;
-    for (var i = 0; i < profanityList.length; ++i) {
-        if (text.indexOf(profanityList[i]) > -1) {
-            tmpString = "";
-            for (var y = 0; y < profanityList[i].length; ++y) {
-                //tmpString += tmpString.length?"o":"M";
-                tmpString = "[ Content Deleted ]"
+            // TOUCH INPUT:
+            var usingTouch;
+            setUsingTouch(false);
+
+            function setUsingTouch(using) {
+                usingTouch = using;
+                updateGuide();
+                // if (using) {
+                //     chatButton.classList.add("mobile");
+                // } else {
+                //     chatButton.classList.remove("mobile");
+                // }
             }
-            var re = new RegExp(profanityList[i], 'g');
-            text = text.replace(re, tmpString);
-        }
-    }
-    return text;
-}
-function receiveChat(sid, message) {
-    var tmpPlayer = findPlayerBySID(sid);
-    if (tmpPlayer) {
-        tmpPlayer.chatMessage = checkProfanityString(message);
-        tmpPlayer.chatCountdown = config.chatCountdown;
-    }
-}
+            window.setUsingTouch = setUsingTouch;
 
-// RESIZE:
-window.addEventListener('resize', UTILS.checkTrusted(resize));
-function resize() {
-    screenWidth = window.innerWidth;
-    screenHeight = window.innerHeight;
-    var scaleFillNative = Math.max(screenWidth / maxScreenWidth, screenHeight / maxScreenHeight) * pixelDensity;
-    gameCanvas.width = screenWidth * pixelDensity;
-    gameCanvas.height = screenHeight * pixelDensity;
-    gameCanvas.style.width = screenWidth + "px";
-    gameCanvas.style.height = screenHeight + "px";
-    mainContext.setTransform(
-        scaleFillNative, 0,
-        0, scaleFillNative,
-        (screenWidth * pixelDensity - (maxScreenWidth * scaleFillNative)) / 2,
-        (screenHeight * pixelDensity - (maxScreenHeight * scaleFillNative)) / 2
-    );
-}
-resize();
+            gameCanvas.addEventListener('touchmove', UTILS.checkTrusted(touchMove), false);
 
-
-
-// TOUCH INPUT:
-var usingTouch;
-setUsingTouch(false);
-function setUsingTouch(using) {
-    usingTouch = using;
-    updateGuide();
-    // if (using) {
-    //     chatButton.classList.add("mobile");
-    // } else {
-    //     chatButton.classList.remove("mobile");
-    // }
-}
-window.setUsingTouch = setUsingTouch;
-
-gameCanvas.addEventListener('touchmove', UTILS.checkTrusted(touchMove), false);
-function touchMove(ev) {
-    ev.preventDefault();
-    ev.stopPropagation();
-    setUsingTouch(true);
-    for (var i = 0; i < ev.changedTouches.length; i++) {
-        var t = ev.changedTouches[i];
-        if (t.identifier == controllingTouch.id) {
-            controllingTouch.currentX = t.pageX;
-            controllingTouch.currentY = t.pageY;
-            sendMoveDir();
-        } else if (t.identifier == attackingTouch.id) {
-            attackingTouch.currentX = t.pageX;
-            attackingTouch.currentY = t.pageY;
-            attackState = 1;
-        }
-    }
-}
-gameCanvas.addEventListener('touchstart', UTILS.checkTrusted(touchStart), false);
-function touchStart(ev) {
-    ev.preventDefault();
-    ev.stopPropagation();
-    setUsingTouch(true);
-    for (var i = 0; i < ev.changedTouches.length; i++) {
-        var t = ev.changedTouches[i];
-        if (t.pageX < document.body.scrollWidth / 2 && controllingTouch.id == -1) {
-            controllingTouch.id = t.identifier;
-            controllingTouch.startX = controllingTouch.currentX = t.pageX;
-            controllingTouch.startY = controllingTouch.currentY = t.pageY;
-            sendMoveDir();
-        } else if (t.pageX > document.body.scrollWidth / 2 && attackingTouch.id == -1) {
-            attackingTouch.id = t.identifier;
-            attackingTouch.startX = attackingTouch.currentX = t.pageX;
-            attackingTouch.startY = attackingTouch.currentY = t.pageY;
-            if (player.buildIndex < 0) {
-                attackState = 1;
-                sendAtckState();
+            function touchMove(ev) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                setUsingTouch(true);
+                for (var i = 0; i < ev.changedTouches.length; i++) {
+                    var t = ev.changedTouches[i];
+                    if (t.identifier == controllingTouch.id) {
+                        controllingTouch.currentX = t.pageX;
+                        controllingTouch.currentY = t.pageY;
+                        sendMoveDir();
+                    } else if (t.identifier == attackingTouch.id) {
+                        attackingTouch.currentX = t.pageX;
+                        attackingTouch.currentY = t.pageY;
+                        attackState = 1;
+                    }
+                }
             }
-        }
-    }
-}
-gameCanvas.addEventListener('touchend', UTILS.checkTrusted(touchEnd), false);
-gameCanvas.addEventListener('touchcancel', UTILS.checkTrusted(touchEnd), false);
-gameCanvas.addEventListener('touchleave', UTILS.checkTrusted(touchEnd), false);
-function touchEnd(ev) {
-    ev.preventDefault();
-    ev.stopPropagation();
-    setUsingTouch(true);
-    for (var i = 0; i < ev.changedTouches.length; i++) {
-        var t = ev.changedTouches[i];
-        if (t.identifier == controllingTouch.id) {
-            controllingTouch.id = -1;
-            sendMoveDir();
-        } else if (t.identifier == attackingTouch.id) {
-            attackingTouch.id = -1;
-            if (player.buildIndex >= 0) {
-                attackState = 1;
-                sendAtckState();
+            gameCanvas.addEventListener('touchstart', UTILS.checkTrusted(touchStart), false);
+
+            function touchStart(ev) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                setUsingTouch(true);
+                for (var i = 0; i < ev.changedTouches.length; i++) {
+                    var t = ev.changedTouches[i];
+                    if (t.pageX < document.body.scrollWidth / 2 && controllingTouch.id == -1) {
+                        controllingTouch.id = t.identifier;
+                        controllingTouch.startX = controllingTouch.currentX = t.pageX;
+                        controllingTouch.startY = controllingTouch.currentY = t.pageY;
+                        sendMoveDir();
+                    } else if (t.pageX > document.body.scrollWidth / 2 && attackingTouch.id == -1) {
+                        attackingTouch.id = t.identifier;
+                        attackingTouch.startX = attackingTouch.currentX = t.pageX;
+                        attackingTouch.startY = attackingTouch.currentY = t.pageY;
+                        if (player.buildIndex < 0) {
+                            attackState = 1;
+                            sendAtckState();
+                        }
+                    }
+                }
             }
-            attackState = 0;
-            sendAtckState();
-        }
-    }
-}
+            gameCanvas.addEventListener('touchend', UTILS.checkTrusted(touchEnd), false);
+            gameCanvas.addEventListener('touchcancel', UTILS.checkTrusted(touchEnd), false);
+            gameCanvas.addEventListener('touchleave', UTILS.checkTrusted(touchEnd), false);
 
-
-// MOUSE INPUT:
-const mals = document.getElementById('touch-controls-fullscreen');
-mals.style.display = 'block';
-mals.addEventListener("mousemove", gameInput, false);
-function gameInput(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    setUsingTouch(false);
-    mouseX = e.clientX;
-    mouseY = e.clientY;
-}
-mals.addEventListener('mousedown', mouseDown, false);
-function mouseDown(e) {
-    setUsingTouch(false);
-    if (attackState != 1) {
-        attackState = 1;
-        sendAtckState();
-    }
-}
-mals.addEventListener('mouseup', mouseUp, false);
-function mouseUp(e) {
-    setUsingTouch(false);
-    if (attackState != 0) {
-        attackState = 0;
-        sendAtckState();
-    }
-}
-
-// INPUT UTILS:
-function getMoveDir() {
-    var dx = 0;
-    var dy = 0;
-    if (controllingTouch.id != -1) {
-        dx += controllingTouch.currentX - controllingTouch.startX;
-        dy += controllingTouch.currentY - controllingTouch.startY;
-    } else {
-        for (var key in moveKeys) {
-            var tmpDir = moveKeys[key];
-            dx += !!keys[key] * tmpDir[0];
-            dy += !!keys[key] * tmpDir[1];
-        }
-    }
-    return (dx == 0 && dy == 0) ? undefined : UTILS.fixTo(Math.atan2(dy, dx), 2);
-}
-var lastDir;
-function getAttackDir() {
-    if (!player)
-        return 0;
-    if (attackingTouch.id != -1) {
-        lastDir = Math.atan2(
-            attackingTouch.currentY - attackingTouch.startY,
-            attackingTouch.currentX - attackingTouch.startX
-        );
-    } else if (!player.lockDir && !usingTouch) {
-        lastDir = Math.atan2(mouseY - (screenHeight / 2), mouseX - (screenWidth / 2));
-    }
-    return UTILS.fixTo(lastDir || 0, 2);
-}
-
-// KEYS:
-var keys = {};
-var moveKeys = {
-    87: [0,-1],
-    38: [0,-1],
-    83: [0,1],
-    40: [0,1],
-    65: [-1,0],
-    37: [-1,0],
-    68: [1,0],
-    39: [1,0]
-};
-function resetMoveDir() {
-    keys = {};
-    io.send("rmd");
-}
-function keysActive() {
-    return (allianceMenu.style.display != "block"
-        && chatHolder.style.display != "block");
-}
-function keyDown(event) {
-    var keyNum = event.which||event.keyCode||0;
-    if (keyNum == 27) {
-        hideAllWindows();
-    } else if (player && player.alive && keysActive()) {
-        if (!keys[keyNum]) {
-            keys[keyNum] = 1;
-            if (keyNum == 69) {
-                sendAutoGather();
-            } else if (keyNum == 67) {
-                updateMapMarker();
-            } else if (keyNum == 88) {
-                sendLockDir();
-            } else if (player.weapons[keyNum - 49] != undefined) {
-                selectToBuild(player.weapons[keyNum - 49], true);
-            } else if (player.items[keyNum - 49 - player.weapons.length] != undefined) {
-                selectToBuild(player.items[keyNum - 49 - player.weapons.length]);
-            } else if (keyNum == 81) {
-                selectToBuild(player.items[0]);
-            } else if (keyNum == 82) {
-                sendMapPing();
-            } else if (moveKeys[keyNum]) {
-                sendMoveDir();
-            } else if (keyNum == 32) {
-                attackState = 1;
-                sendAtckState();
+            function touchEnd(ev) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                setUsingTouch(true);
+                for (var i = 0; i < ev.changedTouches.length; i++) {
+                    var t = ev.changedTouches[i];
+                    if (t.identifier == controllingTouch.id) {
+                        controllingTouch.id = -1;
+                        sendMoveDir();
+                    } else if (t.identifier == attackingTouch.id) {
+                        attackingTouch.id = -1;
+                        if (player.buildIndex >= 0) {
+                            attackState = 1;
+                            sendAtckState();
+                        }
+                        attackState = 0;
+                        sendAtckState();
+                    }
+                }
             }
-        }
-    }
-}
-window.addEventListener('keydown', UTILS.checkTrusted(keyDown));
-function keyUp(event) {
-    if (player && player.alive) {
-        var keyNum = event.which||event.keyCode||0;
-        if (keyNum == 13) {
-            toggleChat();
-        } else if (keysActive()) {
-            if (keys[keyNum]) {
-                keys[keyNum] = 0;
-                if (moveKeys[keyNum]) {
-                    sendMoveDir();
-                } else if (keyNum == 32) {
+
+
+            // MOUSE INPUT:
+            gameCanvas.addEventListener('mousemove', gameInput, false);
+
+            function gameInput(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                setUsingTouch(false);
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+            }
+            gameCanvas.addEventListener('mousedown', mouseDown, false);
+
+            function mouseDown(e) {
+                setUsingTouch(false);
+                if (attackState != 1) {
+                    attackState = 1;
+                    sendAtckState();
+                }
+            }
+            gameCanvas.addEventListener('mouseup', mouseUp, false);
+
+            function mouseUp(e) {
+                setUsingTouch(false);
+                if (attackState != 0) {
                     attackState = 0;
                     sendAtckState();
                 }
             }
-        }
-    }
-}
-window.addEventListener('keyup',  UTILS.checkTrusted(keyUp));
-function sendAtckState() {
-    if (player && player.alive) {
-        io.send("c", attackState, (player.buildIndex >= 0?getAttackDir():null));
-    }
-}
-var lastMoveDir = undefined;
-function sendMoveDir() {
-    var newMoveDir = getMoveDir();
-    if (lastMoveDir == undefined || newMoveDir == undefined || Math.abs(newMoveDir - lastMoveDir) > 0.3) {
-        io.send("33", newMoveDir);
-        lastMoveDir = newMoveDir;
-    }
-}
-function sendLockDir() {
-    player.lockDir = player.lockDir?0:1;
-    io.send("7", 0);
-}
-function sendMapPing() {
-    io.send("14", 1);
-}
-function sendAutoGather() {
-    io.send("7", 1);
-}
-function selectToBuild(index, wpn) {
-    io.send("5", index, wpn);
-}
 
-// ENTER GAME:
-function enterGame() {
-    saveVal("moo_name", nameInput.value);
-    if (!inGame && socketReady()) {
-        inGame = true;
-        Sound.stop("menu");
-        showLoadingText("Loading...");
-        io.send("sp", {
-            name: nameInput.value,
-            moofoll: moofoll,
-            skin: skinColor
-        });
-    }
-}
-
-// SETUP GAME:
-var firstSetup = true;
-function setupGame(yourSID) {
-
-
-
-    loadingText.style.display = "none";
-    menuCardHolder.style.display = "block";
-    mainMenu.style.display = "none";
-    keys = {};
-    playerSID = yourSID;
-    playerSID2 = yourSID;
-    attackState = 0;
-    inGame = true;
-    if (firstSetup) {
-        waterMult2 = nightnessMax
-        firstSetup = false;
-        gameObjects.length = 0;
-    }
-}
-
-// SHOW ANIM TEXT:
-function showText(x, y, value, type) {
-    // textManager.showText(x, y, 50, 0.18, 500, Math.abs(value), (value>=0)?"#fff":"#8ecc51");
-}
-
-// KILL PLAYER:
-var deathTextScale = 99999;
-function killPlayer() {
-    inGame = false;
-    try {
-        factorem.refreshAds([2], true);
-    } catch (e) {};
-    gameUI.style.display = "none";
-    hideAllWindows();
-    lastDeath = {
-        x: player.x,
-        y: player.y
-    };
-    loadingText.style.display = "none";
-    //diedText.style.display = "block";
-   // diedText.style.fontSize = "0px";
-    deathTextScale = 99999;
-    setTimeout(function() {
-        menuCardHolder.style.display = "block";
-        mainMenu.style.display = "block";
-        Sound.play("menu", 1, true);
-        //diedText.style.display = "none";
-    }, config.deathFadeout);
-}
-
-// KILL ALL OBJECTS BY A PLAYER:
-function killObjects(sid) {
-    if (player) objectManager.removeAllItems(sid);
-}
-
-// KILL OBJECT:
-function killObject(sid) {
-    objectManager.disableBySid(sid);
-
-    if (pps2[sid] != null) {
-								PPS2= pps2[sid]
-								delete pps2[sid]
-							}
-}
-
-// UPDATE SCORE DISPLAY:
-function updateStatusDisplay() {
-    scoreDisplay.innerText = "Gold " + player.points;
-    foodDisplay.innerText = player.food + " Food";;
-    woodDisplay.innerText = player.wood + " Wood";
-    stoneDisplay.innerText = player.stone + " Stone";
-    killCounter.innerText = player.kills + " Kills";
-}
-
-// ICONS:
-var iconSprites = {};
-var icons = ["crown", "skull"];
-function loadIcons() {
-    for (var i = 0; i < icons.length; ++i) {
-        var tmpSprite = new Image();
-        tmpSprite.onload = function() {
-            this.isLoaded = true;
-        };
-        //tmpSprite.src = ".././img/icons/" + icons[i] + ".png";
-        iconSprites[icons[i]] = tmpSprite;
-    }
-}
-
-// UPDATE UPGRADES:
-var tmpList = [];
-function updateUpgrades(points, age) {
-    player.upgradePoints = points;
-    player.upgrAge = age;
-    if (points > 0) {
-        tmpList.length = 0;
-        UTILS.removeAllChildren(upgradeHolder);
-        for (var i = 0; i < items.weapons.length; ++i) {
-            if (items.weapons[i].age == age && (items.weapons[i].pre == undefined || player.weapons.indexOf(items.weapons[i].pre) >= 0)) {
-                var e = UTILS.generateElement({
-                    id: "upgradeItem" + i,
-                    class: "actionBarItem",
-                    onmouseout: function() { showItemInfo(); },
-                    parent: upgradeHolder
-                });
-                e.style.backgroundImage = document.getElementById("actionBarItem" + i).style.backgroundImage;
-                tmpList.push(i);
-            }
-        }
-        for (var i = 0; i < items.list.length; ++i) {
-            if (items.list[i].age == age && (items.list[i].pre == undefined || player.items.indexOf(items.list[i].pre) >= 0)) {
-                var tmpI = (items.weapons.length + i);
-                var e = UTILS.generateElement({
-                    id: "upgradeItem" + tmpI,
-                    class: "actionBarItem",
-                    onmouseout: function() { showItemInfo(); },
-                    parent: upgradeHolder
-                });
-                e.style.backgroundImage = document.getElementById("actionBarItem" + tmpI).style.backgroundImage;
-                tmpList.push(tmpI);
-            }
-        }
-        for (var i = 0; i < tmpList.length; i++) {
-            (function(i) {
-                var tmpItem = document.getElementById('upgradeItem' + i);
-                tmpItem.onmouseover = function() {
-                    if (items.weapons[i]) {
-                        showItemInfo(items.weapons[i], true);
-                    } else {
-                        showItemInfo(items.list[i-items.weapons.length]);
-                    }
-                };
-                tmpItem.onclick = UTILS.checkTrusted(function() {
-                    io.send("6", i);
-                });
-                UTILS.hookTouchEvents(tmpItem);
-            })(tmpList[i]);
-        }
-        if (tmpList.length) {
-            upgradeHolder.style.display = "block";
-            upgradeCounter.style.display = "block";
-            upgradeCounter.innerHTML = "SELECT ITEMS (" + points + ")";
-        } else {
-            upgradeHolder.style.display = "none";
-            upgradeCounter.style.display = "none";
-            showItemInfo();
-        }
-    } else {
-        upgradeHolder.style.display = "none";
-        upgradeCounter.style.display = "none";
-        showItemInfo();
-    }
-}
-function sendUpgrade(index) {
-    io.send("6", index);
-}
-
-// UPDATE AGE:
-function updateAge(xp, mxp, age) {
-    if (xp != undefined)
-        player.XP = xp;
-    if (mxp != undefined)
-        player.maxXP = mxp;
-    if (age != undefined)
-        player.age = age;
-    if (age == config.maxAge) {
-        ageText.innerHTML = "MAX AGE";
-        ageBarBody.style.width = "100%";
-    } else {
-        ageText.innerHTML = "AGE " + player.age;
-        ageBarBody.style.width = ((player.XP/player.maxXP) * 100) + "%";
-    }
-}
-const formatNumber = (num, decimals = 2) => {
-    if (num == null) return 'Invalid input';
-
-    // Convert input to a number, removing non-numeric characters if it's a string
-    let numValue = typeof num === 'string' ? parseFloat(num.replace(/[^0-9.-]/g, '')) : Number(num);
-
-    if (isNaN(numValue)) return 'Invalid input';
-
-    // Determine if the number is negative and get its absolute value
-    const isNegative = numValue < 0;
-    const absValue = Math.abs(numValue);
-
-    // If the absolute value is below 1000, return it as is
-    if (absValue < 1000) return isNegative ? `-${absValue}` : absValue;
-
-    // Define suffixes for large numbers
-    const suffixes = [
-        { value: 1e9, symbol: 'b' },
-        { value: 1e6, symbol: 'm' },
-        { value: 1e3, symbol: 'k' }
-    ];
-
-    // Find the largest suffix that fits the number
-    const suffix = suffixes.find(({ value }) => absValue >= value);
-    if (!suffix) return numValue.toString();
-
-    // Format the number by dividing by the suffix value and fixing decimals
-    let formattedValue = (absValue / suffix.value).toFixed(decimals);
-
-    // Remove trailing zeros and unnecessary decimal points
-    formattedValue = formattedValue.replace(/\.?0+$/, '');
-
-    // Add back the negative sign if needed and append the suffix
-    return (isNegative ? '-' : '') + formattedValue + suffix.symbol;
-};
-
-// UPDATE LEADERBOARD:
-function updateLeaderboard(data) {
-    UTILS.removeAllChildren(leaderboardData);
-    var tmpC = 1;
-    for (var i = 0; i < data.length; i += 3) {
-        (function(i) {
-            UTILS.generateElement({
-                class: "leaderHolder",
-                parent: leaderboardData,
-                children: [
-                    UTILS.generateElement({
-                        class: "leaderboardItem",
-                        style: "color:" + ((data[i] == playerSID) ? "#fff" : "rgba(255,255,255,0.6)"),
-                        text: showPing4?(getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString()):(tmpC + ". " + (data[i+1] != "" ? data[i+1] : "unknown"))
-                    }),
-                    UTILS.generateElement({
-                        class: "leaderScore",
-                        text: showPing4?(getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString()):(formatNumber(data[i+2], 1) || "0")
-                    })
-                ]
-            });
-        })(i);
-        tmpC++;
-    }
-}
-
-
-
-
-function getRandomInt(min, max) {
-  const minCeiled = Math.ceil(min);
-  const maxFloored = Math.floor(max);
-  return Math.floor(Math.random() * (maxFloored - minCeiled) + minCeiled); // The maximum is exclusive and the minimum is inclusive
-}
-
-// UPDATE GAME:
-function updateGame() {
-    if (true) {
-
-        // UPDATE DIRECTION:
-        if (player) {
-            if (!lastSent || now - lastSent >= (1000 / config.clientSendRate)) {
-                lastSent = now;
-                io.send("2", getAttackDir());
-            }
-        }
-
-        // DEATH TEXT:
-        //if (deathTextScale < 120) {
-        //    deathTextScale += 0.1 * delta;
-            diedText.style.fontSize = Math.min(Math.round(deathTextScale), 120) + "px";
-        //}
-
-        // MOVE CAMERA:
-        var shakeX = showPing4?getRandomInt(-5,5):0
-        var shakeY = showPing4?getRandomInt(-5,5):0
-        if (player) {
-            var tmpDist = UTILS.getDistance(camX, camY, player.x, player.y);
-            var tmpDir = UTILS.getDirection(player.x, player.y, camX, camY);
-            var camSpd = Math.min(tmpDist * 0.01 * delta, tmpDist);
-            if (tmpDist > 0.05) {
-                camX += camSpd * Math.cos(tmpDir) + shakeX;
-                camY += camSpd * Math.sin(tmpDir)+ shakeY;
-            } else {
-                camX = player.x + shakeX;
-                camY = player.y + shakeY;
-            }
-        } else {
-            camX = config.mapScale / 2 + shakeX;
-            camY = config.mapScale / 2 + shakeY;
-        }
-
-        // INTERPOLATE PLAYERS AND AI:
-        var lastTime = now - (1000 / config.serverUpdateRate);
-        var tmpDiff;
-        for (var i = 0; i < players.length + ais.length; ++i) {
-            tmpObj = players[i]||ais[i-players.length];
-            if (tmpObj && tmpObj.visible) {
-                if (tmpObj.forcePos) {
-                    tmpObj.x = tmpObj.x2;
-                    tmpObj.y = tmpObj.y2;
-                    tmpObj.dir = tmpObj.d2;
+            // INPUT UTILS:
+            function getMoveDir() {
+                var dx = 0;
+                var dy = 0;
+                if (controllingTouch.id != -1) {
+                    dx += controllingTouch.currentX - controllingTouch.startX;
+                    dy += controllingTouch.currentY - controllingTouch.startY;
                 } else {
-                    var total = tmpObj.t2 - tmpObj.t1;
-                    var fraction = lastTime - tmpObj.t1;
-                    var ratio = (fraction / total);
-                    var rate = 170;
-                    tmpObj.dt += delta;
-                    var tmpRate = Math.min(1.7, tmpObj.dt / rate);
-                    var tmpDiff = (tmpObj.x2 - tmpObj.x1);
-                    tmpObj.x = tmpObj.x1 + (tmpDiff * tmpRate);
-                    tmpDiff = (tmpObj.y2 - tmpObj.y1);
-                    tmpObj.y = tmpObj.y1 + (tmpDiff * tmpRate);
-                    tmpObj.dir = Math.lerpAngle(tmpObj.d2, tmpObj.d1, Math.min(1.2, ratio));
+                    for (var key in moveKeys) {
+                        var tmpDir = moveKeys[key];
+                        dx += !!keys[key] * tmpDir[0];
+                        dy += !!keys[key] * tmpDir[1];
+                    }
+                }
+                return (dx == 0 && dy == 0) ? undefined : UTILS.fixTo(Math.atan2(dy, dx), 2);
+            }
+            var lastDir;
+
+            function getAttackDir() {
+                if (!player)
+                    return 0;
+                if (attackingTouch.id != -1) {
+                    lastDir = Math.atan2(
+                        attackingTouch.currentY - attackingTouch.startY,
+                        attackingTouch.currentX - attackingTouch.startX
+                    );
+                } else if (!player.lockDir && !usingTouch) {
+                    lastDir = Math.atan2(mouseY - (screenHeight / 2), mouseX - (screenWidth / 2));
+                }
+                return UTILS.fixTo(lastDir || 0, 2);
+            }
+
+            // KEYS:
+            var keys = {};
+            var moveKeys = {
+                87: [0, -1],
+                38: [0, -1],
+                83: [0, 1],
+                40: [0, 1],
+                65: [-1, 0],
+                37: [-1, 0],
+                68: [1, 0],
+                39: [1, 0]
+            };
+
+            function resetMoveDir() {
+                keys = {};
+                io.send("rmd");
+            }
+
+            function keysActive() {
+                return (allianceMenu.style.display != "block" &&
+                    chatHolder.style.display != "block");
+            }
+
+            function keyDown(event) {
+                var keyNum = event.which || event.keyCode || 0;
+                if (keyNum == 27) {
+                    hideAllWindows();
+                } else if (player && player.alive && keysActive()) {
+
+                    if (!keys[keyNum]) {
+                        keys[keyNum] = 1;
+                        if (keyNum == 69) {
+                            sendAutoGather();
+                        } else if (keyNum == 67) {
+                            updateMapMarker();
+                        } else if (keyNum == 88) {
+                            sendLockDir();
+                        } else if (player.weapons[keyNum - 49] != undefined) {
+                            selectToBuild(player.weapons[keyNum - 49], true);
+                        } else if (player.items[keyNum - 49 - player.weapons.length] != undefined) {
+                            selectToBuild(player.items[keyNum - 49 - player.weapons.length]);
+                        } else if (keyNum == 81) {
+                            selectToBuild(player.items[0]);
+                        } else if (keyNum == 82) {
+                            sendMapPing();
+                        } else if (moveKeys[keyNum]) {
+                            sendMoveDir();
+                        } else if (keyNum == 32) {
+
+                            if (event.target === document.body) {
+                                event.preventDefault();
+                            }
+
+                            attackState = 1;
+                            sendAtckState();
+                        }
+                    }
                 }
             }
-        }
+            window.addEventListener('keydown', UTILS.checkTrusted(keyDown));
 
-        // RENDER CORDS:
-        var xOffset = camX - (maxScreenWidth / 2);
-        var yOffset = camY - (maxScreenHeight / 2);
+            function keyUp(event) {
+                if (player && player.alive) {
 
-        // RENDER BACKGROUND:
-        if (config.snowBiomeTop - yOffset <= 0 && config.mapScale - config.snowBiomeTop - yOffset >= maxScreenHeight) {
-            mainContext.fillStyle = "#b6db66";
-            mainContext.fillRect(0, 0, maxScreenWidth, maxScreenHeight);
-        } else if (config.mapScale - config.snowBiomeTop - yOffset <= 0) {
-            mainContext.fillStyle = "#292929";
-            mainContext.fillRect(0, 0, maxScreenWidth, maxScreenHeight);
-        } else if (config.snowBiomeTop - yOffset >= maxScreenHeight) {
-            mainContext.fillStyle = "#fff";
-            mainContext.fillRect(0, 0, maxScreenWidth, maxScreenHeight);
-        } else if (config.snowBiomeTop - yOffset >= 0) {
-            mainContext.fillStyle = "#fff";
-            mainContext.fillRect(0, 0, maxScreenWidth, config.snowBiomeTop - yOffset);
-            mainContext.fillStyle = "#b6db66";
-            mainContext.fillRect(0, config.snowBiomeTop - yOffset, maxScreenWidth,
-                maxScreenHeight - (config.snowBiomeTop - yOffset));
-        } else {
-            mainContext.fillStyle = "#b6db66";
-            mainContext.fillRect(0, 0, maxScreenWidth,
-                (config.mapScale - config.snowBiomeTop - yOffset));
-            mainContext.fillStyle = "#292929";
-            mainContext.fillRect(0, (config.mapScale - config.snowBiomeTop - yOffset), maxScreenWidth,
-                maxScreenHeight - (config.mapScale - config.snowBiomeTop - yOffset));
-        }
-
-        // RENDER WATER AREAS:
-        if (!firstSetup) {
-            waterMult += waterPlus * config.waveSpeed * delta;
-            if (waterMult >= config.waveMax) {
-                waterMult = config.waveMax;
-                waterPlus = -1;
-            } else if (waterMult <= 1) {
-                waterMult = waterPlus = 1;
+                    var keyNum = event.which || event.keyCode || 0;
+                    if (keyNum == 13) {
+                        toggleChat();
+                    } else if (keysActive()) {
+                        if (keys[keyNum]) {
+                            keys[keyNum] = 0;
+                            if (moveKeys[keyNum]) {
+                                sendMoveDir();
+                            } else if (keyNum == 32) {
+                                attackState = 0;
+                                sendAtckState();
+                            }
+                        }
+                    }
+                }
             }
-            var watervar = (waterMult - 1) * 250;
-            //console.log(watervar);
-            mainContext.globalAlpha = 1;
-            mainContext.fillStyle = "#dbc666";
-            renderWaterBodies(xOffset, yOffset, mainContext, config.riverPadding);
-            mainContext.fillStyle = "#91b2db";
-            renderWaterBodies(xOffset, yOffset, mainContext, showPing4?(getRandomInt(-100,100)/1):watervar);
-        }
+            window.addEventListener('keyup', UTILS.checkTrusted(keyUp));
 
-        // RENDER GRID:
-        mainContext.lineWidth = showPing4?(getRandomInt(-100,100)/10):4;
-        mainContext.strokeStyle = "#000";
-        mainContext.globalAlpha = showPing4?(getRandomInt(600,1500)/10000):0.06;
-        mainContext.beginPath();
-        for (var x = -camX; x < maxScreenWidth; x += maxScreenHeight / 18) {
-            if (x > 0) {
-                mainContext.moveTo(showPing4?(getRandomInt(-100,100)/1)+x:x, showPing4?(getRandomInt(-100,100)/1):0);
-                mainContext.lineTo(x, maxScreenHeight);
+            function sendAtckState() {
+                if (player && player.alive) {
+                    io.send("c", attackState, (player.buildIndex >= 0 ? getAttackDir() : null));
+                }
             }
-        }
-        for (var y = -camY; y < maxScreenHeight; y += maxScreenHeight / 18) {
-            if (x > 0) {
-                mainContext.moveTo(showPing4?(getRandomInt(-100,100)/1):0, showPing4?(getRandomInt(-100,100)/1)+y:y);
-                mainContext.lineTo(maxScreenWidth, y);
+            var lastMoveDir = undefined;
+
+            function sendMoveDir() {
+                var newMoveDir = getMoveDir();
+                if (lastMoveDir == undefined || newMoveDir == undefined || Math.abs(newMoveDir - lastMoveDir) > 0.3) {
+                    io.send("33", newMoveDir);
+                    lastMoveDir = newMoveDir;
+                }
             }
-        }
-        mainContext.stroke();
 
-        // RENDER BOTTOM LAYER:
-        mainContext.globalAlpha = 1;
-        mainContext.strokeStyle = outlineColor;
-        renderGameObjects(-1, xOffset, yOffset);
-
-        // RENDER PROJECTILES:
-        mainContext.globalAlpha = 1;
-        mainContext.lineWidth = outlineWidth;
-        renderProjectiles(0, xOffset, yOffset);
-
-        // RENDER PLAYERS:
-        renderPlayers(xOffset, yOffset, 0);
-
-        // RENDER AI:
-        mainContext.globalAlpha = 1;
-        for (var i = 0; i < ais.length; ++i) {
-            tmpObj = ais[i];
-            if (tmpObj.active && tmpObj.visible) {
-                tmpObj.animate(delta);
-                mainContext.save();
-                mainContext.translate(tmpObj.x - xOffset, tmpObj.y - yOffset);
-                mainContext.rotate(tmpObj.dir+tmpObj.dirPlus-(Math.PI/2));
-                renderAI(tmpObj, mainContext);
-                mainContext.restore();
+            function sendLockDir() {
+                player.lockDir = player.lockDir ? 0 : 1;
+                io.send("7", 0);
             }
-        }
 
-        // RENDER GAME OBJECTS (LAYERED):
-        renderGameObjects(0, xOffset, yOffset);
-        renderProjectiles(1, xOffset, yOffset);
-        renderGameObjects(1, xOffset, yOffset);
-        renderPlayers(xOffset, yOffset, 1);
-        renderGameObjects(2, xOffset, yOffset);
-        renderGameObjects(3, xOffset, yOffset);
-
-        // MAP BOUNDARIES:
-        mainContext.fillStyle = "#000";
-        mainContext.globalAlpha = 0.09;
-        if (xOffset <= 0) {
-            mainContext.fillRect(0, 0, -xOffset, maxScreenHeight);
-        } if (config.mapScale - xOffset <= maxScreenWidth) {
-            var tmpY = Math.max(0, -yOffset);
-            mainContext.fillRect(config.mapScale - xOffset, tmpY, maxScreenWidth - (config.mapScale - xOffset), maxScreenHeight - tmpY);
-        } if (yOffset <= 0) {
-            mainContext.fillRect(-xOffset, 0, maxScreenWidth + xOffset, -yOffset);
-        } if (config.mapScale - yOffset <= maxScreenHeight) {
-            var tmpX = Math.max(0, -xOffset);
-            var tmpMin = 0;
-            if (config.mapScale - xOffset <= maxScreenWidth)
-                tmpMin = maxScreenWidth - (config.mapScale - xOffset);
-            mainContext.fillRect(tmpX, config.mapScale - yOffset,
-                (maxScreenWidth - tmpX) - tmpMin, maxScreenHeight - (config.mapScale - yOffset));
-        }
-
-        // RENDER DAY/NIGHT TIME:
-        nightnessCurrent = 1;
-        nightnessSpeed = showPing5?(showPing4?0.005:0.000025):0;
-        nightnessMax = (showPing4?5:4.5);
-         if (!firstSetup) {
-            waterMult2 += waterPlus2 * nightnessSpeed * delta;
-            if (waterMult2 >= nightnessMax) {
-                waterMult2 = nightnessMax;
-                waterPlus2 = -1;
-            } else if (waterMult2 <= 1) {
-                waterMult2 = waterPlus2 = 1;
+            function sendMapPing() {
+                io.send("14", 1);
             }
-            var nightnessvar = showPing5?(showPing4?((((waterMult2 - 0) / 20) * 1)+0.5):(((waterMult2 - 1) / 10) * 1)):0;
-             var ColorNight_R = showPing4?225:0
-             var ColorNight_G = showPing4?25:0
-             var ColorNight_B = showPing4?25:70
-            // console.log(nightnessvar);
-            mainContext.globalAlpha = 1;
-            mainContext.fillStyle = "rgba(" + ColorNight_R + "," + ColorNight_G + "," + ColorNight_B + ", " + nightnessvar + ")";
-            mainContext.fillRect(0, 0, maxScreenWidth, maxScreenHeight);
-        } else {
-            var nightnessvar2 = showPing5?(((waterMult2 - 1) / 10) * 1):0;
-             var ColorNight_R2 = showPing4?225:0
-             var ColorNight_G2 = showPing4?25:0
-             var ColorNight_B2 = showPing4?25:70
-            mainContext.globalAlpha = 1;
-            mainContext.fillStyle = "rgba(" + ColorNight_R2 + "," + ColorNight_G2 + "," + ColorNight_B2 + ", " + nightnessvar2 + ")";
-            mainContext.fillRect(0, 0, maxScreenWidth, maxScreenHeight);
-        }
 
+            function sendAutoGather() {
+                io.send("7", 1);
+            }
 
-        // RENDER PLAYER AND AI UI:
-        mainContext.strokeStyle = darkOutlineColor;
-        for (var i = 0; i < players.length + ais.length; ++i) {
-            tmpObj = players[i]||ais[i-players.length];
-            if (tmpObj.visible) {
+            function selectToBuild(index, wpn) {
+                io.send("5", index, wpn);
+            }
 
-                // NAME AND HEALTH:
-                if (tmpObj.skinIndex != 10 || (tmpObj==player) || (tmpObj.team && tmpObj.team==player.team)) {
-                    var tmpText = showPing4?(getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString() + getRandomInt(0,9).toString()):(tmpObj.name||"");
-                    if (tmpText != "") {
-                        mainContext.font = (tmpObj.nameScale||30) + "px Hammersmith One";
-                        mainContext.fillStyle = (tmpObj.nameColor?tmpObj.nameColor:"#fff");
-                        mainContext.textBaseline = "middle";
-                        mainContext.textAlign = "center";
-                        mainContext.lineWidth = (tmpObj.nameScale?11:8);
-                        mainContext.lineJoin = "round";
-                        mainContext.strokeText(tmpText, tmpObj.x - xOffset, (tmpObj.y - yOffset - tmpObj.scale) - config.nameY);
-                        mainContext.fillText(tmpText, tmpObj.x - xOffset, (tmpObj.y - yOffset - tmpObj.scale) - config.nameY);
+            // ENTER GAME:
+            function enterGame() {
+                saveVal("moo_name", nameInput.value);
+                if (!inGame && socketReady()) {
+                    inGame = true;
+                    Sound.stop("menu");
+                    showLoadingText("Loading...");
+                    io.send("sp", {
+                        name: nameInput.value,
+                        moofoll: 1,
+                        skin: skinColor
+                    });
+                    let cookie = document.getElementById("ot-sdk-btn-floating");
+                    if (cookie) {
+                        cookie.style.display = "none";
+                    }
+                }
+            }
 
-                        if (tmpObj.team != "") {
-                            var teamname = (tmpObj.team?"["+tmpObj.team+"] ":"");
-                            var extraY = -32;
-                            var extraX = 5;
-                            mainContext.font = (tmpObj.nameScale||30) + "px Hammersmith One";
-                            mainContext.fillStyle = (tmpObj.nameColor?tmpObj.nameColor:"#fff");
+            // SETUP GAME:
+            var firstSetup = true;
+
+            function setupGame(yourSID) {
+                loadingText.style.display = "none";
+                menuCardHolder.style.display = "block";
+                mainMenu.style.display = "none";
+                keys = {};
+                playerSID = yourSID;
+                attackState = 0;
+                inGame = true;
+                if (firstSetup) {
+                    firstSetup = false;
+                    gameObjects.length = 0;
+                }
+            }
+
+            // SHOW ANIM TEXT:
+            function showText(x, y, value, type) {
+                textManager.showText(x, y, 50, 0.18, 500, Math.abs(value), (value >= 0) ? "#fff" : "#8ecc51");
+            }
+
+            // KILL PLAYER:
+            var deathTextScale = 99999;
+
+            function killPlayer() {
+                inGame = false;
+                try {
+                    factorem.refreshAds([2], true);
+                } catch (e) {};
+                gameUI.style.display = "none";
+                hideAllWindows();
+                lastDeath = {
+                    x: player.x,
+                    y: player.y
+                };
+                loadingText.style.display = "none";
+                diedText.style.display = "block";
+                diedText.style.fontSize = "0px";
+                deathTextScale = 0;
+                setTimeout(function() {
+                    menuCardHolder.style.display = "block";
+                    mainMenu.style.display = "block";
+                    // Sound.play("menu", 1, true);
+                    diedText.style.display = "none";
+                }, config.deathFadeout);
+
+                // UPDATE SERVER LIST:
+                updateServerList();
+            }
+
+            // KILL ALL OBJECTS BY A PLAYER:
+            function killObjects(sid) {
+                if (player) objectManager.removeAllItems(sid);
+            }
+
+            // KILL OBJECT:
+            function killObject(sid) {
+                objectManager.disableBySid(sid);
+            }
+
+            // UPDATE SCORE DISPLAY:
+            function updateStatusDisplay() {
+                scoreDisplay.innerText = player.points;
+                foodDisplay.innerText = player.food;;
+                woodDisplay.innerText = player.wood;
+                stoneDisplay.innerText = player.stone;
+                killCounter.innerText = player.kills;
+            }
+
+            // ICONS:
+            var iconSprites = {};
+            var icons = ["crown", "skull"];
+
+            function loadIcons() {
+                for (var i = 0; i < icons.length; ++i) {
+                    var tmpSprite = new Image();
+                    tmpSprite.onload = function() {
+                        this.isLoaded = true;
+                    };
+                    tmpSprite.src = ".././img/icons/" + icons[i] + ".png";
+                    iconSprites[icons[i]] = tmpSprite;
+                }
+            }
+
+            // UPDATE UPGRADES:
+            var tmpList = [];
+
+            function updateUpgrades(points, age) {
+                player.upgradePoints = points;
+                player.upgrAge = age;
+                if (points > 0) {
+                    tmpList.length = 0;
+                    UTILS.removeAllChildren(upgradeHolder);
+                    for (var i = 0; i < items.weapons.length; ++i) {
+                        if (items.weapons[i].age == age && (items.weapons[i].pre == undefined || player.weapons.indexOf(items.weapons[i].pre) >= 0)) {
+                            var e = UTILS.generateElement({
+                                id: "upgradeItem" + i,
+                                class: "actionBarItem",
+                                onmouseout: function() {
+                                    showItemInfo();
+                                },
+                                parent: upgradeHolder
+                            });
+                            e.style.backgroundImage = document.getElementById("actionBarItem" + i).style.backgroundImage;
+                            tmpList.push(i);
+                        }
+                    }
+                    for (var i = 0; i < items.list.length; ++i) {
+                        if (items.list[i].age == age && (items.list[i].pre == undefined || player.items.indexOf(items.list[i].pre) >= 0)) {
+                            var tmpI = (items.weapons.length + i);
+                            var e = UTILS.generateElement({
+                                id: "upgradeItem" + tmpI,
+                                class: "actionBarItem",
+                                onmouseout: function() {
+                                    showItemInfo();
+                                },
+                                parent: upgradeHolder
+                            });
+                            e.style.backgroundImage = document.getElementById("actionBarItem" + tmpI).style.backgroundImage;
+                            tmpList.push(tmpI);
+                        }
+                    }
+                    for (var i = 0; i < tmpList.length; i++) {
+                        (function(i) {
+                            var tmpItem = document.getElementById('upgradeItem' + i);
+                            tmpItem.onmouseover = function() {
+                                if (items.weapons[i]) {
+                                    showItemInfo(items.weapons[i], true);
+                                } else {
+                                    showItemInfo(items.list[i - items.weapons.length]);
+                                }
+                            };
+                            tmpItem.onclick = UTILS.checkTrusted(function() {
+                                io.send("6", i);
+                            });
+                            UTILS.hookTouchEvents(tmpItem);
+                        })(tmpList[i]);
+                    }
+                    if (tmpList.length) {
+                        upgradeHolder.style.display = "block";
+                        upgradeCounter.style.display = "block";
+                        upgradeCounter.innerHTML = "SELECT ITEMS (" + points + ")";
+                    } else {
+                        upgradeHolder.style.display = "none";
+                        upgradeCounter.style.display = "none";
+                        showItemInfo();
+                    }
+                } else {
+                    upgradeHolder.style.display = "none";
+                    upgradeCounter.style.display = "none";
+                    showItemInfo();
+                }
+            }
+
+            function sendUpgrade(index) {
+                io.send("6", index);
+            }
+
+            // UPDATE AGE:
+            function updateAge(xp, mxp, age) {
+
+                if (xp != undefined)
+                    player.XP = xp;
+                if (mxp != undefined)
+                    player.maxXP = mxp;
+                if (age != undefined)
+                    player.age = age;
+                if (age == config.maxAge) {
+                    ageText.innerHTML = "MAX AGE";
+                    ageBarBody.style.width = "100%";
+                } else {
+                    ageText.innerHTML = "AGE " + player.age;
+                    ageBarBody.style.width = ((player.XP / player.maxXP) * 100) + "%";
+                }
+            }
+
+            // UPDATE LEADERBOARD:
+            function updateLeaderboard(data) {
+                UTILS.removeAllChildren(leaderboardData);
+                var tmpC = 1;
+                for (var i = 0; i < data.length; i += 3) {
+                    (function(i) {
+                        UTILS.generateElement({
+                            class: "leaderHolder",
+                            parent: leaderboardData,
+                            children: [
+                                UTILS.generateElement({
+                                    class: "leaderboardItem",
+                                    style: "color:" + ((data[i] == playerSID) ? "#fff" : "rgba(255,255,255,0.6)"),
+                                    text: tmpC + ". " + (data[i + 1] != "" ? data[i + 1] : "unknown")
+                                }),
+                                UTILS.generateElement({
+                                    class: "leaderScore",
+                                    text: UTILS.kFormat(data[i + 2]) || "0"
+                                })
+                            ]
+                        });
+                    })(i);
+                    tmpC++;
+                }
+            }
+
+            // UPDATE GAME:
+            function updateGame() {
+                if (true) {
+
+                    // UPDATE DIRECTION:
+                    if (player) {
+                        if (!lastSent || now - lastSent >= (1000 / config.clientSendRate)) {
+                            lastSent = now;
+                            io.send("2", getAttackDir());
+                        }
+                    }
+
+                    // DEATH TEXT:
+                    if (deathTextScale < 120) {
+                        deathTextScale += 0.1 * delta;
+                        diedText.style.fontSize = Math.min(Math.round(deathTextScale), 120) + "px";
+                    }
+
+                    // MOVE CAMERA:
+                    if (player) {
+                        var tmpDist = UTILS.getDistance(camX, camY, player.x, player.y);
+                        var tmpDir = UTILS.getDirection(player.x, player.y, camX, camY);
+                        var camSpd = Math.min(tmpDist * 0.01 * delta, tmpDist);
+                        if (tmpDist > 0.05) {
+                            camX += camSpd * Math.cos(tmpDir);
+                            camY += camSpd * Math.sin(tmpDir);
+                        } else {
+                            camX = player.x;
+                            camY = player.y;
+                        }
+                    } else {
+                        camX = config.mapScale / 2;
+                        camY = config.mapScale / 2;
+                    }
+
+                    // INTERPOLATE PLAYERS AND AI:
+                    var lastTime = now - (1000 / config.serverUpdateRate);
+                    var tmpDiff;
+                    for (var i = 0; i < players.length + ais.length; ++i) {
+                        tmpObj = players[i] || ais[i - players.length];
+                        if (tmpObj && tmpObj.visible) {
+                            if (tmpObj.forcePos) {
+                                tmpObj.x = tmpObj.x2;
+                                tmpObj.y = tmpObj.y2;
+                                tmpObj.dir = tmpObj.d2;
+                            } else {
+                                var total = tmpObj.t2 - tmpObj.t1;
+                                var fraction = lastTime - tmpObj.t1;
+                                var ratio = (fraction / total);
+                                var rate = 170;
+                                tmpObj.dt += delta;
+                                var tmpRate = Math.min(1.7, tmpObj.dt / rate);
+                                var tmpDiff = (tmpObj.x2 - tmpObj.x1);
+                                tmpObj.x = tmpObj.x1 + (tmpDiff * tmpRate);
+                                tmpDiff = (tmpObj.y2 - tmpObj.y1);
+                                tmpObj.y = tmpObj.y1 + (tmpDiff * tmpRate);
+                                tmpObj.dir = Math.lerpAngle(tmpObj.d2, tmpObj.d1, Math.min(1.2, ratio));
+                            }
+                        }
+                    }
+
+                    // RENDER CORDS:
+                    var xOffset = camX - (maxScreenWidth / 2);
+                    var yOffset = camY - (maxScreenHeight / 2);
+
+                    // RENDER BACKGROUND:
+                    if (config.snowBiomeTop - yOffset <= 0 && config.mapScale - config.snowBiomeTop - yOffset >= maxScreenHeight) {
+                        mainContext.fillStyle = "#b6db66";
+                        mainContext.fillRect(0, 0, maxScreenWidth, maxScreenHeight);
+                    } else if (config.mapScale - config.snowBiomeTop - yOffset <= 0) {
+                        mainContext.fillStyle = "#dbc666";
+                        mainContext.fillRect(0, 0, maxScreenWidth, maxScreenHeight);
+                    } else if (config.snowBiomeTop - yOffset >= maxScreenHeight) {
+                        mainContext.fillStyle = "#fff";
+                        mainContext.fillRect(0, 0, maxScreenWidth, maxScreenHeight);
+                    } else if (config.snowBiomeTop - yOffset >= 0) {
+                        mainContext.fillStyle = "#fff";
+                        mainContext.fillRect(0, 0, maxScreenWidth, config.snowBiomeTop - yOffset);
+                        mainContext.fillStyle = "#b6db66";
+                        mainContext.fillRect(0, config.snowBiomeTop - yOffset, maxScreenWidth,
+                            maxScreenHeight - (config.snowBiomeTop - yOffset));
+                    } else {
+                        mainContext.fillStyle = "#b6db66";
+                        mainContext.fillRect(0, 0, maxScreenWidth,
+                            (config.mapScale - config.snowBiomeTop - yOffset));
+                        mainContext.fillStyle = "#dbc666";
+                        mainContext.fillRect(0, (config.mapScale - config.snowBiomeTop - yOffset), maxScreenWidth,
+                            maxScreenHeight - (config.mapScale - config.snowBiomeTop - yOffset));
+                    }
+
+                    // RENDER WATER AREAS:
+                    if (!firstSetup) {
+                        waterMult += waterPlus * config.waveSpeed * delta;
+                        if (waterMult >= config.waveMax) {
+                            waterMult = config.waveMax;
+                            waterPlus = -1;
+                        } else if (waterMult <= 1) {
+                            waterMult = waterPlus = 1;
+                        }
+                        mainContext.globalAlpha = 1;
+                        mainContext.fillStyle = "#dbc666";
+                        renderWaterBodies(xOffset, yOffset, mainContext, config.riverPadding);
+                        mainContext.fillStyle = "#91b2db";
+                        renderWaterBodies(xOffset, yOffset, mainContext, (waterMult - 1) * 250);
+                    }
+
+                    // RENDER GRID:
+                    mainContext.lineWidth = 4;
+                    mainContext.strokeStyle = "#000";
+                    mainContext.globalAlpha = 0.06;
+                    mainContext.beginPath();
+                    for (let x = -camX; x < maxScreenWidth; x += 60) {
+                        if (x > 0) {
+                            mainContext.moveTo(x, 0);
+                            mainContext.lineTo(x, maxScreenHeight);
+                        }
+                    }
+                    for (let y = -camY; y < maxScreenHeight; y += 60) {
+                        if (y > 0) {
+                            mainContext.moveTo(0, y);
+                            mainContext.lineTo(maxScreenWidth, y);
+                        }
+                    }
+                    mainContext.stroke();
+
+                    // RENDER BOTTOM LAYER:
+                    mainContext.globalAlpha = 1;
+                    mainContext.strokeStyle = outlineColor;
+                    renderGameObjects(-1, xOffset, yOffset);
+
+                    // RENDER PROJECTILES:
+                    mainContext.globalAlpha = 1;
+                    mainContext.strokeStyle = outlineColor;
+                    mainContext.lineWidth = outlineWidth;
+                    renderProjectiles(0, xOffset, yOffset);
+
+                    // RENDER PLAYERS:
+                    renderPlayers(xOffset, yOffset, 0);
+
+                    // RENDER AI:
+                    mainContext.globalAlpha = 1;
+                    for (var i = 0; i < ais.length; ++i) {
+                        tmpObj = ais[i];
+                        if (tmpObj.active && tmpObj.visible) {
+                            tmpObj.animate(delta);
+                            mainContext.save();
+                            mainContext.translate(tmpObj.x - xOffset, tmpObj.y - yOffset);
+                            mainContext.rotate(tmpObj.dir + tmpObj.dirPlus - (Math.PI / 2));
+                            renderAI(tmpObj, mainContext);
+                            mainContext.restore();
+                        }
+                    }
+
+                    // RENDER GAME OBJECTS (LAYERED):
+                    renderGameObjects(0, xOffset, yOffset);
+                    renderProjectiles(1, xOffset, yOffset);
+                    renderGameObjects(1, xOffset, yOffset);
+                    renderPlayers(xOffset, yOffset, 1);
+                    renderGameObjects(2, xOffset, yOffset);
+                    renderGameObjects(3, xOffset, yOffset);
+
+                    // MAP BOUNDARIES:
+                    mainContext.fillStyle = "#000";
+                    mainContext.globalAlpha = 0.09;
+                    if (xOffset <= 0) {
+                        mainContext.fillRect(0, 0, -xOffset, maxScreenHeight);
+                    }
+                    if (config.mapScale - xOffset <= maxScreenWidth) {
+                        var tmpY = Math.max(0, -yOffset);
+                        mainContext.fillRect(config.mapScale - xOffset, tmpY, maxScreenWidth - (config.mapScale - xOffset), maxScreenHeight - tmpY);
+                    }
+                    if (yOffset <= 0) {
+                        mainContext.fillRect(-xOffset, 0, maxScreenWidth + xOffset, -yOffset);
+                    }
+                    if (config.mapScale - yOffset <= maxScreenHeight) {
+                        var tmpX = Math.max(0, -xOffset);
+                        var tmpMin = 0;
+                        if (config.mapScale - xOffset <= maxScreenWidth)
+                            tmpMin = maxScreenWidth - (config.mapScale - xOffset);
+                        mainContext.fillRect(tmpX, config.mapScale - yOffset,
+                            (maxScreenWidth - tmpX) - tmpMin, maxScreenHeight - (config.mapScale - yOffset));
+                    }
+
+                    // RENDER DAY/NIGHT TIME:
+                    mainContext.globalAlpha = 1;
+                    mainContext.fillStyle = "rgba(0, 0, 70, 0.35)";
+                    mainContext.fillRect(0, 0, maxScreenWidth, maxScreenHeight);
+
+                    // RENDER PLAYER AND AI UI:
+                    mainContext.strokeStyle = darkOutlineColor;
+                    for (var i = 0; i < players.length + ais.length; ++i) {
+                        tmpObj = players[i] || ais[i - players.length];
+                        if (tmpObj.visible) {
+
+                            // NAME AND HEALTH:
+                            if (tmpObj.skinIndex != 10 || (tmpObj == player) || (tmpObj.team && tmpObj.team == player.team)) {
+                                var tmpText = (tmpObj.team ? "[" + tmpObj.team + "] " : "") + (tmpObj.name || "") + (tmpObj.isPlayer ? " {" + tmpObj.sid + "}" : "");
+                                if (tmpText != "") {
+                                    mainContext.font = (tmpObj.nameScale || 30) + "px Hammersmith One";
+                                    mainContext.fillStyle = "#fff";
+                                    mainContext.textBaseline = "middle";
+                                    mainContext.textAlign = "center";
+                                    mainContext.lineWidth = (tmpObj.nameScale ? 11 : 8);
+                                    mainContext.lineJoin = "round";
+                                    mainContext.strokeText(tmpText, tmpObj.x - xOffset, (tmpObj.y - yOffset - tmpObj.scale) - config.nameY);
+                                    mainContext.fillText(tmpText, tmpObj.x - xOffset, (tmpObj.y - yOffset - tmpObj.scale) - config.nameY);
+                                    if (tmpObj.isLeader && iconSprites["crown"].isLoaded) {
+                                        var tmpS = config.crownIconScale;
+                                        var tmpX = tmpObj.x - xOffset - (tmpS / 2) - (mainContext.measureText(tmpText).width / 2) - config.crownPad;
+                                        mainContext.drawImage(iconSprites["crown"], tmpX, (tmpObj.y - yOffset - tmpObj.scale) -
+                                            config.nameY - (tmpS / 2) - 5, tmpS, tmpS);
+                                    }
+                                    if (tmpObj.iconIndex == 1 && iconSprites["skull"].isLoaded) {
+                                        var tmpS = config.crownIconScale;
+                                        var tmpX = tmpObj.x - xOffset - (tmpS / 2) + (mainContext.measureText(tmpText).width / 2) + config.crownPad;
+                                        mainContext.drawImage(iconSprites["skull"], tmpX, (tmpObj.y - yOffset - tmpObj.scale) -
+                                            config.nameY - (tmpS / 2) - 5, tmpS, tmpS);
+                                    }
+                                }
+                                if (tmpObj.health > 0) {
+
+                                    // HEALTH HOLDER:
+                                    var tmpWidth = config.healthBarWidth;
+                                    mainContext.fillStyle = darkOutlineColor;
+                                    mainContext.roundRect(tmpObj.x - xOffset - config.healthBarWidth - config.healthBarPad,
+                                        (tmpObj.y - yOffset + tmpObj.scale) + config.nameY, (config.healthBarWidth * 2) +
+                                        (config.healthBarPad * 2), 17, 8);
+                                    mainContext.fill();
+
+                                    // HEALTH BAR:
+                                    mainContext.fillStyle = (tmpObj == player || (tmpObj.team && tmpObj.team == player.team)) ? "#8ecc51" : "#cc5151";
+                                    mainContext.roundRect(tmpObj.x - xOffset - config.healthBarWidth,
+                                        (tmpObj.y - yOffset + tmpObj.scale) + config.nameY + config.healthBarPad,
+                                        ((config.healthBarWidth * 2) * (tmpObj.health / tmpObj.maxHealth)), 17 - config.healthBarPad * 2, 7);
+                                    mainContext.fill();
+                                }
+                            }
+                        }
+                    }
+
+                    // RENDER ANIM TEXTS:
+                    textManager.update(delta, mainContext, xOffset, yOffset);
+
+                    // RENDER CHAT MESSAGES:
+                    for (var i = 0; i < players.length; ++i) {
+                        tmpObj = players[i];
+                        if (tmpObj.visible && tmpObj.chatCountdown > 0) {
+                            tmpObj.chatCountdown -= delta;
+                            if (tmpObj.chatCountdown <= 0)
+                                tmpObj.chatCountdown = 0;
+                            mainContext.font = "32px Hammersmith One";
+                            var tmpSize = mainContext.measureText(tmpObj.chatMessage);
                             mainContext.textBaseline = "middle";
                             mainContext.textAlign = "center";
-                            mainContext.lineWidth = (tmpObj.nameScale?11:8);
-                            mainContext.lineJoin = "round";
-                            mainContext.strokeText(teamname, tmpObj.x - xOffset + extraX, (tmpObj.y - yOffset - tmpObj.scale) - config.nameY + extraY);
-                            mainContext.fillText(teamname, tmpObj.x - xOffset + extraX, (tmpObj.y - yOffset - tmpObj.scale) - config.nameY + extraY);
-
+                            var tmpX = tmpObj.x - xOffset;
+                            var tmpY = tmpObj.y - tmpObj.scale - yOffset - 90;
+                            var tmpH = 47;
+                            var tmpW = tmpSize.width + 17;
+                            mainContext.fillStyle = "rgba(0,0,0,0.2)";
+                            mainContext.roundRect(tmpX - tmpW / 2, tmpY - tmpH / 2, tmpW, tmpH, 6);
+                            mainContext.fill();
+                            mainContext.fillStyle = "#fff";
+                            mainContext.fillText(tmpObj.chatMessage, tmpX, tmpY);
                         }
-
-                        if (tmpObj.isLeader && iconSprites["crown"].isLoaded) {
-                            var tmpS = config.crownIconScale;
-                            var tmpX = tmpObj.x - xOffset - (tmpS/2) - (mainContext.measureText(tmpText).width / 2) - config.crownPad;
-                            mainContext.drawImage(iconSprites["crown"], tmpX, (tmpObj.y - yOffset - tmpObj.scale)
-                                - config.nameY - (tmpS/2) - 5, tmpS, tmpS);
-                        } if (tmpObj.iconIndex == 1 && iconSprites["skull"].isLoaded) {
-                            var tmpS = config.crownIconScale;
-                            var tmpX = tmpObj.x - xOffset - (tmpS/2) + (mainContext.measureText(tmpText).width / 2) + config.crownPad;
-                            mainContext.drawImage(iconSprites["skull"], tmpX, (tmpObj.y - yOffset - tmpObj.scale)
-                                - config.nameY - (tmpS/2) - 5, tmpS, tmpS);
-                        }
-                    } if (tmpObj.health > 0) {
-
-                        // HEALTH HOLDER:
-                        var tmpWidth = config.healthBarWidth;
-                        var multi = 2;
-                        if (tmpObj.nameScale) {
-                            tmpWidth = config.healthBarWidth + (tmpObj.nameScale*2);
-                        }
-                        mainContext.fillStyle = darkOutlineColor;
-                        mainContext.roundRect(tmpObj.x - xOffset - tmpWidth - config.healthBarPad,
-                            (tmpObj.y - yOffset + tmpObj.scale) + config.nameY, (tmpWidth * multi) +
-                            (config.healthBarPad * multi), 17, 8);
-                        mainContext.fill();
-
-                        // HEALTH BAR:
-                        mainContext.fillStyle = (tmpObj==player||(tmpObj.team&&tmpObj.team==player.team))?"#8ecc51":"#cc5151";
-                        if (tmpObj.HPbarColor) {
-
-                            mainContext.fillStyle = tmpObj.HPbarColor;
-
-                        }
-                        mainContext.roundRect(tmpObj.x - xOffset - tmpWidth,
-                            (tmpObj.y - yOffset + tmpObj.scale) + config.nameY + config.healthBarPad,
-                            ((tmpWidth * multi) * (tmpObj.health / tmpObj.maxHealth)), 17 - config.healthBarPad * multi, 7);
-                        mainContext.fill();
                     }
                 }
+
+                // RENDER MINIMAP:
+                renderMinimap(delta);
+
+                // RENDER CONTROLS:
+                if (controllingTouch.id !== -1) {
+                    renderControl(
+                        controllingTouch.startX, controllingTouch.startY,
+                        controllingTouch.currentX, controllingTouch.currentY
+                    );
+                }
+                if (attackingTouch.id !== -1) {
+                    renderControl(
+                        attackingTouch.startX, attackingTouch.startY,
+                        attackingTouch.currentX, attackingTouch.currentY
+                    );
+                }
             }
-        }
 
-        // RENDER ANIM TEXTS:
-        textManager.update(delta, mainContext, xOffset, yOffset);
-
-        // RENDER CHAT MESSAGES:
-        for (var i = 0; i < players.length; ++i) {
-            tmpObj = players[i];
-            if (tmpObj.visible && tmpObj.chatCountdown > 0) {
-                tmpObj.chatCountdown -= delta;
-                if (tmpObj.chatCountdown <= 0)
-                    tmpObj.chatCountdown = 0;
-                mainContext.font = "32px Hammersmith One";
-                var tmpSize = mainContext.measureText(tmpObj.chatMessage);
-                mainContext.textBaseline = "middle";
-                mainContext.textAlign = "center";
-                var tmpX = tmpObj.x - xOffset;
-                var tmpY = tmpObj.y - tmpObj.scale - yOffset - 90;
-                var tmpH = 47;
-                var tmpW = tmpSize.width + 17;
-                mainContext.fillStyle = "rgba(0,0,0,0.2)";
-                mainContext.roundRect(tmpX-tmpW/2, tmpY-tmpH/2, tmpW, tmpH, 6);
+            // RENDER CONTROL:
+            function renderControl(startX, startY, currentX, currentY) {
+                mainContext.save();
+                mainContext.setTransform(1, 0, 0, 1, 0, 0);
+                // mainContext.resetTransform();
+                mainContext.scale(pixelDensity, pixelDensity);
+                var controlRadius = 50;
+                mainContext.beginPath();
+                mainContext.arc(startX, startY, controlRadius, 0, Math.PI * 2, false);
+                mainContext.closePath();
+                mainContext.fillStyle = "rgba(255, 255, 255, 0.3)";
                 mainContext.fill();
-                mainContext.fillStyle = "#fff";
-                mainContext.fillText(tmpObj.chatMessage, tmpX, tmpY);
-            }
-        }
-    }
-
-    // RENDER MINIMAP:
-    renderMinimap(delta);
-
-    // RENDER CONTROLS:
-    if (controllingTouch.id !== -1) {
-        renderControl(
-            controllingTouch.startX, controllingTouch.startY,
-            controllingTouch.currentX, controllingTouch.currentY
-        );
-    }
-    if (attackingTouch.id !== -1) {
-        renderControl(
-            attackingTouch.startX, attackingTouch.startY,
-            attackingTouch.currentX, attackingTouch.currentY
-        );
-    }
-}
-
-// RENDER CONTROL:
-function renderControl(startX, startY, currentX, currentY) {
-    mainContext.save();
-    mainContext.setTransform(1, 0, 0, 1, 0, 0);
-    // mainContext.resetTransform();
-    mainContext.scale(pixelDensity, pixelDensity);
-    var controlRadius = 50;
-    mainContext.beginPath();
-    mainContext.arc(startX, startY, controlRadius, 0, Math.PI * 2, false);
-    mainContext.closePath();
-    mainContext.fillStyle = "rgba(255, 255, 255, 0.3)";
-    mainContext.fill();
-    var controlRadius = 50;
-    var offsetX = currentX - startX;
-    var offsetY = currentY - startY;
-    var mag = Math.sqrt(Math.pow(offsetX, 2) + Math.pow(offsetY, 2));
-    var divisor = mag > controlRadius ? (mag / controlRadius) : 1;
-    offsetX /= divisor;
-    offsetY /= divisor;
-    mainContext.beginPath();
-    mainContext.arc(startX + offsetX, startY + offsetY, controlRadius * 0.5, 0, Math.PI * 2, false);
-    mainContext.closePath();
-    mainContext.fillStyle = "white";
-    mainContext.fill();
-    mainContext.restore();
-}
-
-// RENDER PROJECTILES:
-function renderProjectiles(layer, xOffset, yOffset) {
-    for (var i = 0; i < projectiles.length; ++i) {
-        tmpObj = projectiles[i];
-        if (tmpObj.active && tmpObj.layer == layer) {
-            tmpObj.update(delta);
-            if (tmpObj.active && isOnScreen(tmpObj.x-xOffset, tmpObj.y-yOffset, tmpObj.scale)) {
-                mainContext.save();
-                mainContext.translate(tmpObj.x - xOffset, tmpObj.y - yOffset);
-                mainContext.rotate(tmpObj.dir);
-                renderProjectile(0, 0, tmpObj, mainContext, 1);
+                var controlRadius = 50;
+                var offsetX = currentX - startX;
+                var offsetY = currentY - startY;
+                var mag = Math.sqrt(Math.pow(offsetX, 2) + Math.pow(offsetY, 2));
+                var divisor = mag > controlRadius ? (mag / controlRadius) : 1;
+                offsetX /= divisor;
+                offsetY /= divisor;
+                mainContext.beginPath();
+                mainContext.arc(startX + offsetX, startY + offsetY, controlRadius * 0.5, 0, Math.PI * 2, false);
+                mainContext.closePath();
+                mainContext.fillStyle = "white";
+                mainContext.fill();
                 mainContext.restore();
             }
-        }
-    }
-}
 
-// RENDER PROJECTILE:
-var projectileSprites = {};
-function renderProjectile(x, y, obj, ctxt, debug) {
-    if (obj.src) {
-        var tmpSrc = items.projectiles[obj.indx].src;
-        var tmpSprite = projectileSprites[tmpSrc];
-        if (!tmpSprite) {
-            tmpSprite = new Image();
-            tmpSprite.onload = function() {
-                this.isLoaded = true;
-            }
-            tmpSprite.src = ".././img/weapons/" + tmpSrc + ".png";
-            projectileSprites[tmpSrc] = tmpSprite;
-        }
-        if (tmpSprite.isLoaded)
-            ctxt.drawImage(tmpSprite, x - (obj.scale / 2), y - (obj.scale / 2), obj.scale, obj.scale);
-    } else if (obj.indx == 1) {
-        ctxt.fillStyle = "#939393";
-        renderCircle(x, y, obj.scale, ctxt);
-    }
-}
-
-function Rf() {
-    const e = Re - maxScreenWidth / 2,
-        t = _e - maxScreenHeight / 2;
-    Me.animationTime += be, Me.animationTime %= config.volcanoAnimationDuration;
-    const i = config.volcanoAnimationDuration / 2,
-        s = 1.7 + .3 * (Math.abs(i - Me.animationTime) / i),
-        n = config.innerVolcanoScale * s;
-    mainContext.drawImage(Me.land, Me.x - config.volcanoScale - e, Me.y - config.volcanoScale - t, config.volcanoScale * 2, config.volcanoScale * 2), mainContext.drawImage(Me.lava, Me.x - n - e, Me.y - n - t, n * 2, n * 2)
-}
-
-// RENDER WATER BODIES:
-function renderWaterBodies(xOffset, yOffset, ctxt, padding) {
-
-    // MIDDLE RIVER:
-    var tmpW = config.riverWidth + padding;
-    var tmpY = (config.mapScale / 2) - yOffset - (tmpW / 2);
-    if (tmpY < maxScreenHeight && tmpY + tmpW > 0) {
-        ctxt.fillRect(0, tmpY, maxScreenWidth, tmpW);
-    }
-}
-
-// RENDER GAME OBJECTS:
-function renderGameObjects(layer, xOffset, yOffset) {
-    var tmpSprite, tmpX, tmpY;
-    for (var i = 0; i < gameObjects.length; ++i) {
-        tmpObj = gameObjects[i];
-        if (tmpObj.active) {
-            tmpX = tmpObj.x + tmpObj.xWiggle - xOffset;
-            tmpY = tmpObj.y + tmpObj.yWiggle - yOffset;
-            if (layer == 0) {
-                tmpObj.update(delta);
-            }
-            if (tmpObj.layer == layer && isOnScreen(tmpX, tmpY, tmpObj.scale + (tmpObj.blocker||0))) {
-                mainContext.globalAlpha = tmpObj.hideFromEnemy?0.6:1;
-                if (tmpObj.isItem) {
-                    tmpSprite = getItemSprite(tmpObj);
-                    mainContext.save();
-                    mainContext.translate(tmpX, tmpY);
-                    mainContext.rotate(tmpObj.dir);
-                    mainContext.drawImage(tmpSprite, -(tmpSprite.width / 2), -(tmpSprite.height / 2));
-                    if (tmpObj.blocker) {
-                        mainContext.strokeStyle = "#db6e6e";
-                        mainContext.globalAlpha = 0.3;
-                        mainContext.lineWidth = 6;
-                        renderCircle(0, 0, tmpObj.blocker, mainContext, false, true);
+            // RENDER PROJECTILES:
+            function renderProjectiles(layer, xOffset, yOffset) {
+                for (var i = 0; i < projectiles.length; ++i) {
+                    tmpObj = projectiles[i];
+                    if (tmpObj.active && tmpObj.layer == layer) {
+                        tmpObj.update(delta);
+                        if (tmpObj.active && isOnScreen(tmpObj.x - xOffset, tmpObj.y - yOffset, tmpObj.scale)) {
+                            mainContext.save();
+                            mainContext.translate(tmpObj.x - xOffset, tmpObj.y - yOffset);
+                            mainContext.rotate(tmpObj.dir);
+                            renderProjectile(0, 0, tmpObj, mainContext, 1);
+                            mainContext.restore();
+                        }
                     }
-                    mainContext.restore();
-                } else {
-                    tmpSprite = getResSprite(tmpObj);
-                    mainContext.drawImage(tmpSprite, tmpX - (tmpSprite.width / 2), tmpY - (tmpSprite.height / 2));
                 }
             }
-        }
-    }
-}
 
-// GATHER ANIMATION:
-function gatherAnimation(sid, didHit, index) {
-    tmpObj = findPlayerBySID(sid);
-    if (tmpObj) tmpObj.startAnim(didHit, index);
-}
+            // RENDER PROJECTILE:
+            var projectileSprites = {};
 
-// RENDER PLAYERS:
-function renderPlayers(xOffset, yOffset, zIndex) {
-    mainContext.globalAlpha = 1;
-    for (var i = 0; i < players.length; ++i) {
-        tmpObj = players[i];
-        if (tmpObj.zIndex == zIndex) {
-            tmpObj.animate(delta);
-            if (tmpObj.visible) {
-                tmpObj.skinRot += (0.002 * delta);
-                tmpDir = ((tmpObj == player)?getAttackDir():tmpObj.dir) + tmpObj.dirPlus;
-                mainContext.save();
-                mainContext.translate(tmpObj.x - xOffset, tmpObj.y - yOffset);
-
-                // RENDER PLAYER:
-                mainContext.rotate(tmpDir);
-                renderPlayer(tmpObj, mainContext);
-                mainContext.restore();
-            }
-        }
-    }
-}
-
-// RENDER PLAYER:
-function renderPlayer(obj, ctxt) {
-    ctxt = ctxt || mainContext;
-    ctxt.lineWidth = outlineWidth;
-    ctxt.lineJoin = "miter";
-    var handAngle = (Math.PI / 4) * (items.weapons[obj.weaponIndex].armS||1);
-    var oHandAngle = (obj.buildIndex < 0)?(items.weapons[obj.weaponIndex].hndS||1):1;
-    var oHandDist = (obj.buildIndex < 0)?(items.weapons[obj.weaponIndex].hndD||1):1;
-
-    // TAIL/CAPE:
-    if (obj.tailIndex > 0) {
-        renderTail(obj.tailIndex, ctxt, obj);
-    }
-
-    // WEAPON BELLOW HANDS:
-    if (obj.buildIndex < 0 && !items.weapons[obj.weaponIndex].aboveHand) {
-        renderTool(items.weapons[obj.weaponIndex], config.weaponVariants[obj.weaponVariant].src, obj.scale, 0, ctxt);
-        if (items.weapons[obj.weaponIndex].projectile != undefined && !items.weapons[obj.weaponIndex].hideProjectile) {
-            renderProjectile(obj.scale, 0,
-                items.projectiles[items.weapons[obj.weaponIndex].projectile], mainContext);
-        }
-    }
-
-    // HANDS:
-    ctxt.fillStyle = config.skinColors[obj.skinColor];
-    renderCircle(obj.scale * Math.cos(handAngle), (obj.scale * Math.sin(handAngle)), 14);
-    renderCircle((obj.scale * oHandDist) * Math.cos(-handAngle * oHandAngle),
-        (obj.scale * oHandDist) * Math.sin(-handAngle * oHandAngle), 14);
-
-    // WEAPON ABOVE HANDS:
-    if (obj.buildIndex < 0 && items.weapons[obj.weaponIndex].aboveHand) {
-        renderTool(items.weapons[obj.weaponIndex], config.weaponVariants[obj.weaponVariant].src, obj.scale, 0, ctxt);
-        if (items.weapons[obj.weaponIndex].projectile != undefined && !items.weapons[obj.weaponIndex].hideProjectile) {
-            renderProjectile(obj.scale, 0,
-                items.projectiles[items.weapons[obj.weaponIndex].projectile], mainContext);
-        }
-    }
-
-    // BUILD ITEM:
-    if (obj.buildIndex >= 0) {
-        var tmpSprite = getItemSprite(items.list[obj.buildIndex]);
-        ctxt.drawImage(tmpSprite, obj.scale - items.list[obj.buildIndex].holdOffset, -tmpSprite.width / 2);
-    }
-
-    // BODY:
-    renderCircle(0, 0, obj.scale, ctxt);
-
-    // SKIN:
-    if (obj.skinIndex > 0) {
-        ctxt.rotate(Math.PI/2);
-        renderSkin(obj.skinIndex, ctxt, null, obj);
-    }
-}
-
-// RENDER SKINS:
-var skinSprites = {};
-var skinPointers = {};
-var tmpSkin;
-function renderSkin(index, ctxt, parentSkin, owner) {
-    tmpSkin = skinSprites[index];
-    if (!tmpSkin) {
-        var tmpImage = new Image();
-        tmpImage.onload = function() {
-            this.isLoaded = true;
-            this.onload = null;
-        };
-        //tmpImage.src = ".././img/hats/hat_" + index + ".png";
-        tmpImage.src = "https://raw.githubusercontent.com/N0obGdPro/moomoo.archive/refs/heads/main/img/hats/hat_" + index + ".png";
-        skinSprites[index] = tmpImage;
-        tmpSkin = tmpImage;
-    }
-    var tmpObj = parentSkin||skinPointers[index];
-    if (!tmpObj) {
-        for (var i = 0; i < hats.length; ++i) {
-            if (hats[i].id == index) {
-                tmpObj = hats[i];
-                break;
-            }
-        }
-        skinPointers[index] = tmpObj;
-    }
-    if (tmpSkin.isLoaded)
-        ctxt.drawImage(tmpSkin, -tmpObj.scale/2, -tmpObj.scale/2, tmpObj.scale, tmpObj.scale);
-    if (!parentSkin && tmpObj.topSprite) {
-        ctxt.save();
-        ctxt.rotate(owner.skinRot);
-        renderSkin(index + "_top", ctxt, tmpObj, owner);
-        ctxt.restore();
-    }
-}
-
-// RENDER TAIL:
-var accessSprites = {};
-var accessPointers = {};
-function renderTail(index, ctxt, owner) {
-    tmpSkin = accessSprites[index];
-    if (!tmpSkin) {
-        var tmpImage = new Image();
-        tmpImage.onload = function() {
-            this.isLoaded = true;
-            this.onload = null;
-        };
-        //tmpImage.src = ".././img/accessories/access_" + index + ".png";
-        tmpImage.src = "https://raw.githubusercontent.com/N0obGdPro/moomoo.archive/refs/heads/main/img/accessories/access_" + index + ".png";
-        accessSprites[index] = tmpImage;
-        tmpSkin = tmpImage;
-    }
-    var tmpObj = accessPointers[index];
-    if (!tmpObj) {
-        for (var i = 0; i < accessories.length; ++i) {
-            if (accessories[i].id == index) {
-                tmpObj = accessories[i];
-                break;
-            }
-        }
-        accessPointers[index] = tmpObj;
-    }
-    if (tmpSkin.isLoaded) {
-        ctxt.save();
-        ctxt.translate(-20 - (tmpObj.xOff||0), 0);
-        if (tmpObj.spin)
-            ctxt.rotate(owner.skinRot);
-        ctxt.drawImage(tmpSkin, -(tmpObj.scale/2), -(tmpObj.scale/2), tmpObj.scale, tmpObj.scale);
-        ctxt.restore();
-    }
-}
-
-// RENDER TOOL:
-var toolSprites = {};
-function renderTool(obj, variant, x, y, ctxt, size) {
-    var a = obj;
-    var c = ctxt;
-    var b = x;
-    var d = y;
-    var e = e ? .35 : (size || 1);
-
-    var colorvar = "#939393";
-    var colorvar2 = "#9e7543";
-    var colorvar3 = "#bf8f54";
-    var colorvar4 = "#939393";
-
-    // console.log(variant);
-    console.log("DEBUG VARIANT TO: " + variant);
-
-    if (variant == null || "") {
-        //console.log("Equipping Normal Weapon");
-        colorvar = "#939393";
-        colorvar2 = "#9e7543";
-        colorvar3 = "#bf8f54";
-        colorvar4 = "#939393";
-    } else if (variant == "_g") {
-        //console.log("Equipping Golden Weapon");
-        colorvar = "#F7CF45";
-        colorvar2 = "#F7CF45";
-        colorvar3 = "#F7CF45";
-        colorvar4 = "#939393";
-    } else if (variant == "_d") {
-        //console.log("Equipping Diamond Weapon");
-        colorvar = "#749589";
-        colorvar2 = "#749589";
-        colorvar3 = "#749589";
-        colorvar4 = "#535353";
-    } else if (variant == "_r") {
-        //console.log("Equipping Ruby Weapon");
-        colorvar = "#807AC4";
-        colorvar2 = "#807AC4";
-        colorvar3 = "#807AC4";
-        colorvar4 = "#535353";
-    } else if (variant == "_e") {
-        //console.log("Equipping Emerald Weapon");
-        colorvar = "#7B935D";
-        colorvar2 = "#7B935D";
-        colorvar3 = "#7B935D";
-        colorvar4 = "#535353";
-    }
-
-    if (obj.src == "hammer_1" || obj.src == "axe_1" || obj.src == "sword_1" || obj.src == "stick_1" || obj.src == "dagger_1" || obj.src == "spear_1" || obj.src == "bat_1" || obj.src == "great_axe_1" || obj.src == "samurai_1" || obj.src == "great_hammer_1" || obj.src == "grab_1" || obj.src == "shield_1") {
-        // HAMMER
-        obj.src == "hammer_1" ? (
-        c.fillStyle = "#9e7543",
-        c.roundRect(b - 18 * e, d - 44 * e, 16 * e, 125 * e, 5 * e),
-        c.fill(),
-        c.stroke(),
-        c.fillStyle = colorvar,
-        c.roundRect(b - 25 * e, d + 49 * e, 45 * e, 25 * e, 5 * e),
-        c.fill(),
-        c.stroke()
-        ) :
-
-        // AXE
-        obj.src == "axe_1" ? (
-        c.fillStyle = "#9e7543",
-        c.roundRect(b - 18 * e, d - 44 * e, 16 * e, 135 * e, 5 * e),
-        c.fill(),
-        c.stroke(),
-        c.fillStyle = colorvar,
-        c.roundRect(b - 25 * e, d + 49 * e, 60 * e, 34 * e, 5 * e),
-        c.fill(),
-        c.stroke()
-        ) :
-
-        // SWORD
-        obj.src == "sword_1" ? (
-        c.fillStyle = "#9e7543",
-        c.roundRect(b - 18 * e, d - 44 * e, 16 * e, 125 * e, 5 * e),
-        c.fill(),
-        c.stroke(),
-        c.fillStyle = colorvar,
-        c.roundRect(b - 22 * e, d + 40 * e, 25 * e, 70 * e, 4 * e),
-        c.fill(),
-        c.stroke()
-        ) :
-
-        // STICK
-        obj.src == "stick_1" ? (
-        c.fillStyle = colorvar2,
-        c.roundRect(b - 18 * e, d - 44 * e, 16 * e, 165 * e, 5 * e),
-        c.fill(),
-        c.stroke()
-        ) :
-
-        // DAGGERS
-        obj.src == "dagger_1" ? (
-        c.fillStyle = colorvar3,
-        renderCircle(0, 0, 5, ctxt),
-        c.fill(),
-        c.stroke()
-        ) :
-
-        // SPEAR
-        obj.src == "spear_1" ? (
-        c.fillStyle = "#9e7543",
-        c.roundRect(b - 18 * e, d - 44 * e, 16 * e, 155 * e, 5 * e),
-        c.fill(),
-        c.stroke(),
-        c.fillStyle = colorvar,
-        // renderStar(ctxt, 5, 5, 4, 20, 10), // WIP
-        c.roundRect(b - 35 * e, d + 50 * e, 50 * e, 50 * e, 50 * e), // (X, Y, width, height, roundness)
-        c.fill(),
-        c.stroke()
-        ) :
-
-        // BAT
-        obj.src == "bat_1" ? (
-        c.fillStyle = colorvar,
-        c.roundRect(b - 35 * e, d + 90 * e, 50 * e, 10 * e, 0 * e), // (X, Y, width, height, roundness)
-        c.fill(),
-        c.stroke(),
-        c.fillStyle = colorvar4,
-        c.roundRect(b - 35 * e, d + 70 * e, 50 * e, 10 * e, 0 * e), // (X, Y, width, height, roundness)
-        c.fill(),
-        c.stroke(),
-        c.fillStyle = colorvar,
-        c.roundRect(b - 35 * e, d + 50 * e, 50 * e, 10 * e, 0 * e), // (X, Y, width, height, roundness)
-        c.fill(),
-        c.stroke(),
-        c.fillStyle = "#9e7543",
-        c.roundRect(b - 18 * e, d - 44 * e, 16 * e, 155 * e, 5 * e),
-        c.fill(),
-        c.stroke()
-        ) :
-
-        // GREAT AXE
-        obj.src == "great_axe_1" ? (
-        c.fillStyle = "#9e7543",
-        c.roundRect(b - 18 * e, d - 44 * e, 16 * e, 135 * e, 5 * e), // (X, Y, width, height, roundness)
-        c.fill(),
-        c.stroke(),
-        c.fillStyle = colorvar,
-        c.roundRect(b - 50 * e, d + 49 * e, 80 * e, 34 * e, 2.5 * e), // (X, Y, width, height, roundness)
-        c.fill(),
-        c.stroke()
-        ) :
-
-        // GREAT SWORD
-        obj.src == "samurai_1" ? (
-        c.fillStyle = "#9e7543",
-        c.roundRect(b - 18 * e, d - 44 * e, 16 * e, 125 * e, 5 * e), // (X, Y, width, height, roundness)
-        c.fill(),
-        c.stroke(),
-        c.fillStyle = colorvar,
-        c.roundRect(b - 20 * e, d + 40 * e, 20 * e, 110 * e, 50 * e), // (X, Y, width, height, roundness)
-        c.fill(),
-        c.stroke(),
-        c.fillStyle = colorvar4,
-        c.roundRect(b - 27 * e, d + 40 * e, 35 * e, 20 * e, 0 * e), // (X, Y, width, height, roundness)
-        c.fill(),
-        c.stroke()
-        ) :
-
-        // GREAT HAMMER
-        obj.src == "great_hammer_1" ? (
-        c.fillStyle = "#9e7543",
-        c.roundRect(b - 18 * e, d - 44 * e, 16 * e, 165 * e, 5 * e), // (X, Y, width, height, roundness)
-        c.fill(),
-        c.stroke(),
-        c.fillStyle = colorvar4,
-        c.roundRect(b - 50 * e, d + 49 * e, 80 * e, 60 * e, 5 * e), // (X, Y, width, height, roundness)
-        c.fill(),
-        c.stroke(),
-        c.fillStyle = colorvar,
-        c.roundRect(b + 27.5 * e, d + 42.25 * e, 20 * e, 75 * e, 5 * e), // (X, Y, width, height, roundness)
-        c.fill(),
-        c.stroke(),
-        c.fillStyle = colorvar,
-        c.roundRect(b - 67.5 * e, d + 42.25 * e, 20 * e, 75 * e, 5 * e), // (X, Y, width, height, roundness)
-        c.fill(),
-        c.stroke()
-        ) :
-
-        // GRAB
-        obj.src == "grab_1" ? (
-        c.fillStyle = "#9e7543",
-        c.roundRect(b - 18 * e, d - 44 * e, 16 * e, 125 * e, 5 * e),
-        c.fill(),
-        c.stroke(),
-        c.fillStyle = colorvar3,
-        c.roundRect(b - 22 * e, d + 70 * e, 25 * e, 25 * e, 50 * e), // (X, Y, width, height, roundness)
-        c.fill(),
-        c.stroke()
-        ) :
-
-        // SHIELD
-        obj.src == "shield_1" && (
-        c.fillStyle = "#9e7543",
-        c.roundRect(b - 0 * e, d - 46 * e, 16 * e, 94 * e, 50 * e), // (X, Y, width, height, roundness)
-        c.fill(),
-        c.stroke(),
-        c.fillStyle = colorvar,
-        c.roundRect(b + 8 * e, d - 38 * e, 16 * e, 82 * e, 0 * e), // (X, Y, width, height, roundness)
-        c.fill(),
-        c.stroke()
-        )
-
-    } else {
-           var tmpSrc = obj.src + (variant||"");
-    var tmpSprite = toolSprites[tmpSrc];
-    if (!tmpSprite) {
-        tmpSprite = new Image();
-        tmpSprite.onload = function() {
-            this.isLoaded = true;
-        }
-        tmpSprite.src = ".././img/weapons/" + tmpSrc + ".png";
-        toolSprites[tmpSrc] = tmpSprite;
-    }
-    if (tmpSprite.isLoaded)
-        ctxt.drawImage(tmpSprite, x+obj.xOff-(obj.length/2), y+obj.yOff-(obj.width/2), obj.length, obj.width);
-
-    }
-
-
-}
-
-function Or(e, t, i) {
-    const s = e.lineWidth || 0;
-    i /= 2, e.beginPath();
-    let n = Math.PI * 2 / t;
-    for (let r = 0; r < t; r++) e.lineTo(i + (i - s / 2) * Math.cos(n * r), i + (i - s / 2) * Math.sin(n * r));
-    e.closePath()
-}
-
-// RENDER GAME OBJECTS:
-var gameObjectSprites = {};
-function getResSprite(obj) {
-    var biomeID = (obj.y>=config.mapScale-config.snowBiomeTop)?2:((obj.y<=config.snowBiomeTop)?1:0);
-    var tmpIndex = (obj.type + "_" + obj.scale + "_" + biomeID);
-    var tmpSprite = gameObjectSprites[tmpIndex];
-    if (!tmpSprite) {
-        var tmpCanvas = document.createElement('canvas');
-        tmpCanvas.width = tmpCanvas.height = (obj.scale * 2.1) + outlineWidth;
-        var tmpContext = tmpCanvas.getContext('2d');
-        tmpContext.translate((tmpCanvas.width / 2), (tmpCanvas.height / 2));
-        tmpContext.rotate(UTILS.randFloat(0, Math.PI));
-        tmpContext.strokeStyle = outlineColor;
-        tmpContext.lineWidth = outlineWidth;
-        if (obj.type == 0) { // Trees
-            var tmpScale;
-            if (showPing2 == true) {
-                var random = UTILS.randInt(7, 10)
-                var randomed = Math.random()
-
-                 function randomcolor(arr) {
-                     return arr[Math.floor(randomed * arr.length)]
-                 }
-
-                const option = randomcolor(['#9ebf57', '#ffb08a', '#ff87c5', '#ffdc3d', '#4a7125'])
-                const option2 = randomcolor(['#b4db62', '#ffc5a9', '#ffb7c5', '#ffeb8f', '#5e8539'])
-
-
-                for (var i = 0; i < 2; ++i) {
-                tmpScale = tmpObj.scale * (!i?0.8:0.35);
-                renderBlob(tmpContext, random, tmpScale, tmpScale * 0.7);
-                tmpContext.fillStyle = !biomeID?(!i?option:option2):(!i?"#e3f1f4":"#fff");
-                tmpContext.fill();
-                if (!i)
-                    tmpContext.stroke();
-            }
-
-            } else {
-
-                for (var i = 0; i < 2; ++i) {
-                tmpScale = tmpObj.scale * (!i?0.8:0.35);
-                renderStar(tmpContext, 7, tmpScale, tmpScale * 0.7);
-                tmpContext.fillStyle = !biomeID?(!i?"#9ebf57":"#b4db62"):(!i?"#e3f1f4":"#fff");
-                tmpContext.fill();
-                if (!i)
-                    tmpContext.stroke();
-            }
-
-            }
-        } else if (obj.type == 1) { // Cactus
-            if (biomeID == 2) {
-                /*tmpContext.fillStyle = "#606060";
-                renderStar(tmpContext, 6, obj.scale * 0.3, obj.scale * 0.71);
-                tmpContext.fill();
-                tmpContext.stroke();
-                tmpContext.fillStyle = "#89a54c";
-                renderCircle(0, 0, obj.scale * 0.55, tmpContext);
-                tmpContext.fillStyle = "#a5c65b";
-                renderCircle(0, 0, obj.scale * 0.3, tmpContext, true);*/
-
-                // spike orb deadly
-                /*tmpContext.fillStyle = "#939393";
-            var tmpScale2 = (tmpObj.scale * 0.4);
-            renderStar(tmpContext, 8, tmpObj.scale * 0.8, tmpScale2);
-            tmpContext.fill();
-            tmpContext.stroke();
-            tmpContext.fillStyle = "#7f7f7f";
-            renderCircle(0, 0, tmpScale2, tmpContext);
-            tmpContext.fillStyle = "#dc641b";
-            renderCircle(0, 0, tmpScale2/2, tmpContext, true);*/
-
-
-                tmpContext.fillStyle = "#606060";
-                renderStar(tmpContext, UTILS.randInt(4, 8), obj.scale * 0.3, obj.scale * 0.71);
-                tmpContext.fill();
-                tmpContext.stroke();
-                 renderBlob(tmpContext, UTILS.randInt(4, 8), (tmpObj.scale)/1.75, (tmpObj.scale * 0.7)/1.75);
-                tmpContext.fillStyle = "#575656";
-                tmpContext.fill();
-                tmpContext.stroke();
-                tmpContext.fillStyle = "#dc641b";
-                var tmpRange;
-                var berries = 3;
-                var rotVal = mathPI2 / berries;
-                for (var i = 0; i < berries; ++i) {
-                    tmpRange = UTILS.randInt(tmpObj.scale/6, tmpObj.scale/5.5);
-                    renderCircle(tmpRange * Math.cos(rotVal * i), tmpRange * Math.sin(rotVal * i),
-                        UTILS.randInt(10, 12), tmpContext);
-                }
-
-            } else { // Bushes
-                var randd = UTILS.randInt(4,8);
-
-                renderBlob(tmpContext, showPing2?randd:6, (tmpObj.scale)/1.1, (tmpObj.scale * 0.7)/1.1);
-                tmpContext.fillStyle = biomeID?"#e3f1f4":"#89a54c";
-                tmpContext.fill();
-                tmpContext.stroke();
-
-                if (showPing2 == true) {
-
-                renderBlob(tmpContext, showPing2?randd:6, (tmpObj.scale)/1.75, (tmpObj.scale * 0.7)/1.75);
-                tmpContext.fillStyle = biomeID?"#fff":"#9ebf57";
-                tmpContext.fill();
-
-                }
-
-
-                tmpContext.fillStyle = biomeID?"#6a64af":"#c15555";
-                var tmpRange;
-                var berries = showPing2?UTILS.randInt(3,7):4;
-                var rotVal = mathPI2 / berries;
-                for (var i = 0; i < berries; ++i) {
-                    tmpRange = showPing2?UTILS.randInt(tmpObj.scale/4.6, tmpObj.scale/1.7):UTILS.randInt(tmpObj.scale/3.5, tmpObj.scale/2.3);
-                    renderCircle(tmpRange * Math.cos(rotVal * i), tmpRange * Math.sin(rotVal * i),
-                        UTILS.randInt(10, 12), tmpContext);
+            function renderProjectile(x, y, obj, ctxt, debug) {
+                if (obj.src) {
+                    var tmpSrc = items.projectiles[obj.indx].src;
+                    var tmpSprite = projectileSprites[tmpSrc];
+                    if (!tmpSprite) {
+                        tmpSprite = new Image();
+                        tmpSprite.onload = function() {
+                            this.isLoaded = true;
+                        }
+                        tmpSprite.src = ".././img/weapons/" + tmpSrc + ".png";
+                        projectileSprites[tmpSrc] = tmpSprite;
+                    }
+                    if (tmpSprite.isLoaded)
+                        ctxt.drawImage(tmpSprite, x - (obj.scale / 2), y - (obj.scale / 2), obj.scale, obj.scale);
+                } else if (obj.indx == 1) {
+                    ctxt.fillStyle = "#939393";
+                    renderCircle(x, y, obj.scale, ctxt);
                 }
             }
-        } else if (obj.type == 2 || obj.type == 3) { // Stone & Gold
-            tmpContext.fillStyle = (obj.type==2)?(biomeID==2?"#635f5f":"#939393"):"#e0c655";
-            renderStar(tmpContext, biomeID==2?(UTILS.randInt(3, 5)):3, obj.scale/(biomeID==2?1:1.2), obj.scale/(biomeID==2?1:1.2));
-            tmpContext.fill();
-            tmpContext.stroke();
-            tmpContext.fillStyle = (obj.type==2)?(biomeID==2?"#736d6d":"#bcbcbc"):"#ebdca3";
-            renderStar(tmpContext, biomeID==2?(UTILS.randInt(2, 4)):3, (obj.scale * 0.55)/(biomeID==2?1:1.2), (obj.scale * 0.65)/(biomeID==2?1:1.2));
-            tmpContext.fill();
-        } else if (obj.type == 4) { // Volcano
 
+            // RENDER WATER BODIES:
+            function renderWaterBodies(xOffset, yOffset, ctxt, padding) {
 
-//                 tmpContext.strokeStyle = "#3e3e3e";
-//                 tmpContext.lineWidth = 5.5 * 2;
-//                 tmpContext.fillStyle = "#7f7f7f";
-//                 tmpContext.fill();
-//                 tmpContext.stroke();
-//                 Me.land = i;
-//                 tmpContext.strokeStyle = "3e3e3e";
-//                 tmpContext.lineWidth = 5.5 * 1.6;
-//                 tmpContext.fillStyle = "#f54e16";
-//                 tmpContext.strokeStyle = "#f56f16";
-//                 tmpContext.fill();
-//                 tmpContext.stroke();
-//                 Me.lava = tmpContext
-
-            const t = config.volcanoScale * 2,
-            i = document.createElement("canvas");
-            i.width = t, i.height = t;
-            const s = i.getContext("2d");
-            tmpContext.fillStyle = "#7f7f7f", renderStar(tmpContext, 10, obj.scale/1, obj.scale/1), tmpContext.fill(), tmpContext.stroke(), Me.land = i;
-
-            const n = document.createElement("canvas"),
-            r = config.innerVolcanoScale * 2;
-            n.width = r, n.height = r;
-            const o = n.getContext("2d");
-            tmpContext.fillStyle = "#6a64af", renderStar(tmpContext, 10, (obj.scale * 0.55)/1, (obj.scale * 0.65)/1), tmpContext.fill(), Me.lava = n;
-
-        }
-        tmpSprite = tmpCanvas;
-        gameObjectSprites[tmpIndex] = tmpSprite;
-    }
-    return tmpSprite;
-}
-
-function Ff() {
-    const t = config.volcanoScale * 2,
-        i = document.createElement("canvas");
-    i.width = t, i.height = t;
-    const s = i.getContext("2d");
-    s.strokeStyle = "#3e3e3e", s.lineWidth = 5.5 * 2, s.fillStyle = "#7f7f7f", Or(s, 10, t), s.fill(), s.stroke(), Me.land = i;
-    const n = document.createElement("canvas"),
-        r = config.innerVolcanoScale * 2;
-    n.width = r, n.height = r;
-    const o = n.getContext("2d");
-    o.strokeStyle = "#525252", o.lineWidth = 5.5 * 1.6, o.fillStyle = "#f54e16", o.strokeStyle = "#f56f16", Or(o, 10, r), o.fill(), o.stroke(), Me.lava = n
-}
-Ff();
-
-// GET ITEM SPRITE:
-var itemSprites = [];
-function getItemSprite(obj, asIcon) {
-    var tmpSprite = itemSprites[obj.id];
-    if (!tmpSprite || asIcon) {
-        var tmpCanvas = document.createElement('canvas');
-        tmpCanvas.width = tmpCanvas.height = (obj.scale * 2.5) + outlineWidth +
-            (items.list[obj.id].spritePadding||0);
-        var tmpContext = tmpCanvas.getContext('2d');
-        tmpContext.translate((tmpCanvas.width / 2), (tmpCanvas.height / 2));
-        tmpContext.rotate(asIcon?0:(Math.PI/2));
-        tmpContext.strokeStyle = outlineColor;
-        tmpContext.lineWidth = outlineWidth * (asIcon?(tmpCanvas.width/81):1);
-        if (obj.name == "apple") {
-            tmpContext.fillStyle = "#c15555";
-            renderCircle(0, 0, obj.scale, tmpContext);
-            tmpContext.fillStyle = "#89a54c";
-            var leafDir = -(Math.PI / 2);
-            renderLeaf(obj.scale * Math.cos(leafDir), obj.scale * Math.sin(leafDir),
-                25, leafDir + Math.PI/2, tmpContext);
-        } else if (obj.name == "cookie") {
-            tmpContext.fillStyle = "#cca861";
-            renderCircle(0, 0, obj.scale, tmpContext);
-            tmpContext.fillStyle = "#937c4b";
-            var chips = 4;
-            var rotVal = mathPI2 / chips;
-            var tmpRange;
-            for (var i = 0; i < chips; ++i) {
-                tmpRange = UTILS.randInt(obj.scale / 2.5, obj.scale / 1.7);
-                renderCircle(tmpRange * Math.cos(rotVal * i), tmpRange * Math.sin(rotVal * i),
-                    UTILS.randInt(4, 5), tmpContext, true);
-            }
-        } else if (obj.name == "cheese") {
-            tmpContext.fillStyle = "#f4f3ac";
-            renderCircle(0, 0, obj.scale, tmpContext);
-            tmpContext.fillStyle = "#c3c28b";
-            var chips = 4;
-            var rotVal = mathPI2 / chips;
-            var tmpRange;
-            for (var i = 0; i < chips; ++i) {
-                tmpRange = UTILS.randInt(obj.scale / 2.5, obj.scale / 1.7);
-                renderCircle(tmpRange * Math.cos(rotVal * i), tmpRange * Math.sin(rotVal * i),
-                    UTILS.randInt(4, 5), tmpContext, true);
-            }
-         } else if (obj.name == "pizza") {
-             tmpContext.fillStyle = "#cca861";
-             renderCircle(0, 0, obj.scale, tmpContext);
-             tmpContext.fillStyle = "#ead467";
-             renderCircle(0, 0, .7 * obj.scale, tmpContext, true)
-             var chips = 4;
-             var rotVal = mathPI2 / chips;
-             var tmpRange;
-             for (var i = 0; i < chips; ++i) {
-                 tmpContext.fillStyle = UTILS.randInt(0, 1) ? "#d86868" : "#93b253",
-                 tmpRange = UTILS.randInt(obj.scale / 2.5, obj.scale / 1.7);
-                 renderCircle(tmpRange * Math.cos(rotVal * i), tmpRange * Math.sin(rotVal * i),
-                 UTILS.randInt(4, 5), tmpContext, true);
-             }
-        } else if (obj.name == "wood wall" || obj.name == "stone wall" || obj.name == "castle wall") {
-            tmpContext.fillStyle = (obj.name == "castle wall")?"#83898e":(obj.name=="wood wall")?
-                "#a5974c":"#939393";
-            var sides = (obj.name == "castle wall")?4:3;
-            renderStar(tmpContext, sides, obj.scale * 1.1, obj.scale * 1.1);
-            tmpContext.fill();
-            tmpContext.stroke();
-            tmpContext.fillStyle = (obj.name == "castle wall")?"#9da4aa":(obj.name=="wood wall")?
-                "#c9b758":"#bcbcbc";
-            renderStar(tmpContext, sides, obj.scale * 0.65, obj.scale * 0.65);
-            tmpContext.fill();
-        } else if (obj.name == "spikes" || obj.name == "greater spikes" || obj.name == "poison spikes"
-            || obj.name == "spinning spikes") {
-            tmpContext.fillStyle = (obj.name == "poison spikes")?"#7b935d":"#939393";
-            var tmpScale = (obj.scale * 0.6);
-
-            if (showPing2 == true) {
-                renderStar(tmpContext, (obj.name == "poison spikes")?6:((obj.name == "spikes")?4:8), obj.scale, tmpScale);
-            } else {
-                renderStar(tmpContext, (obj.name == "spikes")?5:6, obj.scale, tmpScale);
-            }
-
-            tmpContext.fill();
-            tmpContext.stroke();
-            if (showPing2 == true) {
-                var R = 40.055;
-                var sc = 0.8;
-                if (obj.name == "spikes") {
-                    tmpContext.rotate(R);
-                } else if (obj.name == "greater spikes") {
-                    R = 40.055/2;
-                    sc = 0.7;
-                    tmpContext.rotate(R);
-                } else if (obj.name == "spinning spikes") {
-                    R = 40.055/2;
-                    sc = 0.7;
-                    tmpContext.rotate(R);
-                } else if (obj.name == "poison spikes") {
-                    R = 40.055/1.5;
-                    sc = 0.75;
-                    tmpContext.rotate(R);
+                // MIDDLE RIVER:
+                var tmpW = config.riverWidth + padding;
+                var tmpY = (config.mapScale / 2) - yOffset - (tmpW / 2);
+                if (tmpY < maxScreenHeight && tmpY + tmpW > 0) {
+                    ctxt.fillRect(0, tmpY, maxScreenWidth, tmpW);
                 }
-                tmpScale = (obj.scale * sc);
-                tmpContext.fillStyle = "#a5974c";
-                renderStar(tmpContext, (obj.name == "poison spikes")?3:((obj.name == "spikes")?2:4), tmpScale, tmpScale);
-                tmpContext.fill();
-                tmpContext.stroke();
-                tmpContext.fillStyle = "#c9b758";
-                renderStar(tmpContext, (obj.name == "poison spikes")?3:((obj.name == "spikes")?2:4), tmpScale/2, tmpScale/2);
-                tmpContext.fill();
-            } else {
-                tmpContext.fillStyle = "#a5974c";
-                renderCircle(0, 0, tmpScale, tmpContext);
-                tmpContext.fillStyle = "#c9b758";
-                renderCircle(0, 0, tmpScale/2, tmpContext, true);
             }
 
-        } else if (obj.name == "windmill" || obj.name == "faster windmill" || obj.name == "power mill") {
-            tmpContext.fillStyle = "#a5974c";
-            renderCircle(0, 0, obj.scale, tmpContext);
-            tmpContext.fillStyle = "#c9b758";
+            // RENDER GAME OBJECTS:
+            function renderGameObjects(layer, xOffset, yOffset) {
+                var tmpSprite, tmpX, tmpY;
+                for (var i = 0; i < gameObjects.length; ++i) {
+                    tmpObj = gameObjects[i];
+                    if (tmpObj.active) {
+                        tmpX = tmpObj.x + tmpObj.xWiggle - xOffset;
+                        tmpY = tmpObj.y + tmpObj.yWiggle - yOffset;
+                        if (layer == 0) {
+                            tmpObj.update(delta);
+                        }
+                        if (tmpObj.layer == layer && isOnScreen(tmpX, tmpY, tmpObj.scale + (tmpObj.blocker || 0))) {
+                            mainContext.globalAlpha = tmpObj.hideFromEnemy ? 0.6 : 1;
+                            if (tmpObj.isItem) {
+                                tmpSprite = getItemSprite(tmpObj);
+                                mainContext.save();
+                                mainContext.translate(tmpX, tmpY);
+                                mainContext.rotate(tmpObj.dir);
+                                mainContext.drawImage(tmpSprite, -(tmpSprite.width / 2), -(tmpSprite.height / 2));
+                                if (tmpObj.blocker) {
+                                    mainContext.strokeStyle = "#db6e6e";
+                                    mainContext.globalAlpha = 0.3;
+                                    mainContext.lineWidth = 6;
+                                    renderCircle(0, 0, tmpObj.blocker, mainContext, false, true);
+                                }
+                                mainContext.restore();
+                            } else {
+                                tmpSprite = getResSprite(tmpObj);
+                                mainContext.drawImage(tmpSprite, tmpX - (tmpSprite.width / 2), tmpY - (tmpSprite.height / 2));
+                            }
+                        }
+                    }
+                }
+            }
 
-            if (showPing2 == true) {
+            // GATHER ANIMATION:
+            function gatherAnimation(sid, didHit, index) {
+                tmpObj = findPlayerBySID(sid);
+                if (tmpObj) tmpObj.startAnim(didHit, index);
+            }
 
-                if (obj.name == "windmill") {
+            // RENDER PLAYERS:
+            function renderPlayers(xOffset, yOffset, zIndex) {
+                mainContext.globalAlpha = 1;
+                for (var i = 0; i < players.length; ++i) {
+                    tmpObj = players[i];
+                    if (tmpObj.zIndex == zIndex) {
+                        tmpObj.animate(delta);
+                        if (tmpObj.visible) {
+                            tmpObj.skinRot += (0.002 * delta);
+                            tmpDir = ((tmpObj == player) ? getAttackDir() : tmpObj.dir) + tmpObj.dirPlus;
+                            mainContext.save();
+                            mainContext.translate(tmpObj.x - xOffset, tmpObj.y - yOffset);
 
-                            renderRectCircle(0, 0, obj.scale * 1.5, 40, 2, tmpContext);
+                            // RENDER PLAYER:
+                            mainContext.rotate(tmpDir);
+                            renderPlayer(tmpObj, mainContext);
+                            mainContext.restore();
+                        }
+                    }
+                }
+            }
 
-                } else if (obj.name == "faster windmill") {
+            // RENDER PLAYER:
+            function renderPlayer(obj, ctxt) {
+                ctxt = ctxt || mainContext;
+                ctxt.lineWidth = outlineWidth;
+                ctxt.lineJoin = "miter";
+                var handAngle = (Math.PI / 4) * (items.weapons[obj.weaponIndex].armS || 1);
+                var oHandAngle = (obj.buildIndex < 0) ? (items.weapons[obj.weaponIndex].hndS || 1) : 1;
+                var oHandDist = (obj.buildIndex < 0) ? (items.weapons[obj.weaponIndex].hndD || 1) : 1;
 
-                            renderRectCircle(0, 0, obj.scale * 1.5, 29, 3, tmpContext);
-
-                } else if (obj.name == "power mill") {
-
-                            renderRectCircle(0, 0, obj.scale * 1.5, 15, 6, tmpContext);
-
+                // TAIL/CAPE:
+                if (obj.tailIndex > 0) {
+                    renderTail(obj.tailIndex, ctxt, obj);
                 }
 
-            } else {
-                renderRectCircle(0, 0, obj.scale * 1.5, 29, 3, tmpContext);
+                // WEAPON BELLOW HANDS:
+                if (obj.buildIndex < 0 && !items.weapons[obj.weaponIndex].aboveHand) {
+                    renderTool(items.weapons[obj.weaponIndex], config.weaponVariants[obj.weaponVariant].src, obj.scale, 0, ctxt);
+                    if (items.weapons[obj.weaponIndex].projectile != undefined && !items.weapons[obj.weaponIndex].hideProjectile) {
+                        renderProjectile(obj.scale, 0,
+                            items.projectiles[items.weapons[obj.weaponIndex].projectile], mainContext);
+                    }
+                }
+
+                // HANDS:
+                ctxt.fillStyle = config.skinColors[obj.skinColor];
+                renderCircle(obj.scale * Math.cos(handAngle), (obj.scale * Math.sin(handAngle)), 14);
+                renderCircle((obj.scale * oHandDist) * Math.cos(-handAngle * oHandAngle),
+                    (obj.scale * oHandDist) * Math.sin(-handAngle * oHandAngle), 14);
+
+                // WEAPON ABOVE HANDS:
+                if (obj.buildIndex < 0 && items.weapons[obj.weaponIndex].aboveHand) {
+                    renderTool(items.weapons[obj.weaponIndex], config.weaponVariants[obj.weaponVariant].src, obj.scale, 0, ctxt);
+                    if (items.weapons[obj.weaponIndex].projectile != undefined && !items.weapons[obj.weaponIndex].hideProjectile) {
+                        renderProjectile(obj.scale, 0,
+                            items.projectiles[items.weapons[obj.weaponIndex].projectile], mainContext);
+                    }
+                }
+
+                // BUILD ITEM:
+                if (obj.buildIndex >= 0) {
+                    var tmpSprite = getItemSprite(items.list[obj.buildIndex]);
+                    ctxt.drawImage(tmpSprite, obj.scale - items.list[obj.buildIndex].holdOffset, -tmpSprite.width / 2);
+                }
+
+                // BODY:
+                renderCircle(0, 0, obj.scale, ctxt);
+
+                // SKIN:
+                if (obj.skinIndex > 0) {
+                    ctxt.rotate(Math.PI / 2);
+                    renderSkin(obj.skinIndex, ctxt, null, obj);
+                }
             }
 
+            // RENDER SKINS:
+            var skinSprites = {};
+            var skinPointers = {};
+            var tmpSkin;
 
-            tmpContext.fillStyle = "#a5974c";
-            renderCircle(0, 0, obj.scale * 0.5, tmpContext);
-        } else if (obj.name == "mine") {
-            tmpContext.fillStyle = "#939393";
-            renderStar(tmpContext, 3, obj.scale, obj.scale);
-            tmpContext.fill();
-            tmpContext.stroke();
-            tmpContext.fillStyle = "#bcbcbc";
-            renderStar(tmpContext, 3, obj.scale * 0.55, obj.scale * 0.65);
-            tmpContext.fill();
-        } else if (obj.name == "sapling") {
-            for (var i = 0; i < 2; ++i) {
-                var tmpScale = obj.scale * (!i?1:0.5);
-                renderStar(tmpContext, 7, tmpScale, tmpScale * 0.7);
-                tmpContext.fillStyle = (!i?"#9ebf57":"#b4db62");
-                tmpContext.fill();
-                if (!i) tmpContext.stroke();
+            function renderSkin(index, ctxt, parentSkin, owner) {
+                tmpSkin = skinSprites[index];
+                if (!tmpSkin) {
+                    var tmpImage = new Image();
+                    tmpImage.onload = function() {
+                        this.isLoaded = true;
+                        this.onload = null;
+                    };
+                    tmpImage.src = ".././img/hats/hat_" + index + ".png";
+                    skinSprites[index] = tmpImage;
+                    tmpSkin = tmpImage;
+                }
+                var tmpObj = parentSkin || skinPointers[index];
+                if (!tmpObj) {
+                    for (var i = 0; i < hats.length; ++i) {
+                        if (hats[i].id == index) {
+                            tmpObj = hats[i];
+                            break;
+                        }
+                    }
+                    skinPointers[index] = tmpObj;
+                }
+                if (tmpSkin.isLoaded)
+                    ctxt.drawImage(tmpSkin, -tmpObj.scale / 2, -tmpObj.scale / 2, tmpObj.scale, tmpObj.scale);
+                if (!parentSkin && tmpObj.topSprite) {
+                    ctxt.save();
+                    ctxt.rotate(owner.skinRot);
+                    renderSkin(index + "_top", ctxt, tmpObj, owner);
+                    ctxt.restore();
+                }
             }
-        } else if (obj.name == "pit trap") {
-            tmpContext.fillStyle = "#a5974c";
-            renderStar(tmpContext, 3, obj.scale * 1.1, obj.scale * 1.1);
-            tmpContext.fill();
-            tmpContext.stroke();
-            tmpContext.fillStyle = outlineColor;
-            renderStar(tmpContext, 3, obj.scale * 0.65, obj.scale * 0.65);
-            tmpContext.fill();
-        } else if (obj.name == "boost pad") {
-            tmpContext.fillStyle = "#7e7f82";
-            renderRect(0, 0, obj.scale*2, obj.scale*2, tmpContext);
-            tmpContext.fill();
-            tmpContext.stroke();
-            tmpContext.fillStyle = "#dbd97d";
-            renderTriangle(obj.scale * 1, tmpContext);
-        } else if (obj.name == "turret") {
-            tmpContext.fillStyle = "#a5974c";
-            renderCircle(0, 0, obj.scale, tmpContext);
-            tmpContext.fill();
-            tmpContext.stroke();
-            tmpContext.fillStyle = "#939393";
-            var tmpLen = 50;
-            renderRect(0, -tmpLen/2, obj.scale * 0.9, tmpLen, tmpContext);
-            renderCircle(0, 0, obj.scale * 0.6, tmpContext);
-            tmpContext.fill();
-            tmpContext.stroke();
-        } else if (obj.name == "platform") {
-            tmpContext.fillStyle = "#cebd5f";
-            var tmpCount = 4;
-            var tmpS = obj.scale * 2;
-            var tmpW = tmpS / tmpCount;
-            var tmpX = -(obj.scale/2);
-            for (var i = 0; i < tmpCount; ++i) {
-                renderRect(tmpX - (tmpW/2), 0, tmpW, obj.scale*2, tmpContext);
-                tmpContext.fill();
-                tmpContext.stroke();
-                tmpX += tmpS / tmpCount;
+
+            // RENDER TAIL:
+            var accessSprites = {};
+            var accessPointers = {};
+
+            function renderTail(index, ctxt, owner) {
+                tmpSkin = accessSprites[index];
+                if (!tmpSkin) {
+                    var tmpImage = new Image();
+                    tmpImage.onload = function() {
+                        this.isLoaded = true;
+                        this.onload = null;
+                    };
+                    tmpImage.src = ".././img/accessories/access_" + index + ".png";
+                    accessSprites[index] = tmpImage;
+                    tmpSkin = tmpImage;
+                }
+                var tmpObj = accessPointers[index];
+                if (!tmpObj) {
+                    for (var i = 0; i < accessories.length; ++i) {
+                        if (accessories[i].id == index) {
+                            tmpObj = accessories[i];
+                            break;
+                        }
+                    }
+                    accessPointers[index] = tmpObj;
+                }
+                if (tmpSkin.isLoaded) {
+                    ctxt.save();
+                    ctxt.translate(-20 - (tmpObj.xOff || 0), 0);
+                    if (tmpObj.spin)
+                        ctxt.rotate(owner.skinRot);
+                    ctxt.drawImage(tmpSkin, -(tmpObj.scale / 2), -(tmpObj.scale / 2), tmpObj.scale, tmpObj.scale);
+                    ctxt.restore();
+                }
             }
-        } else if (obj.name == "healing pad") {
-            tmpContext.fillStyle = "#7e7f82";
-            renderRect(0, 0, obj.scale*2, obj.scale*2, tmpContext);
-            tmpContext.fill();
-            tmpContext.stroke();
-            tmpContext.fillStyle = "#db6e6e";
-            renderRectCircle(0, 0, obj.scale * 0.65, 20, 4, tmpContext, true);
-        } else if (obj.name == "spawn pad") {
-            tmpContext.fillStyle = "#7e7f82";
-            renderRect(0, 0, obj.scale*2, obj.scale*2, tmpContext);
-            tmpContext.fill();
-            tmpContext.stroke();
-            tmpContext.fillStyle = "#71aad6";
-            renderCircle(0, 0, obj.scale * 0.6, tmpContext);
-        } else if (obj.name == "blocker") {
-            tmpContext.fillStyle = "#7e7f82";
-            renderCircle(0, 0, obj.scale, tmpContext);
-            tmpContext.fill();
-            tmpContext.stroke();
-            tmpContext.rotate(Math.PI / 4);
-            tmpContext.fillStyle = "#db6e6e";
-            renderRectCircle(0, 0, obj.scale * 0.65, 20, 4, tmpContext, true);
-        }  else if (obj.name == "teleporter") {
-            tmpContext.fillStyle = "#7e7f82";
-            renderCircle(0, 0, obj.scale, tmpContext);
-            tmpContext.fill();
-            tmpContext.stroke();
-            tmpContext.rotate(Math.PI / 4);
-            tmpContext.fillStyle = "#d76edb";
-            renderCircle(0, 0, obj.scale * 0.5, tmpContext, true);
-        }
-        tmpSprite = tmpCanvas;
-        if (!asIcon)
-            itemSprites[obj.id] = tmpSprite;
-    }
-    return tmpSprite;
-}
 
-// RENDER LEAF:
-function renderLeaf(x, y, l, r, ctxt) {
-    var endX = showPing4?(getRandomInt(-100,100)/100):x + (l * Math.cos(r));
-    var endY = showPing4?(getRandomInt(-100,100)/100):y + (l * Math.sin(r));
-    var width = l * 0.4;
-    ctxt.moveTo(x, y);
-    ctxt.beginPath();
-    ctxt.quadraticCurveTo(((x + endX) / 2) + (width * Math.cos(r + Math.PI/2)),
-        ((y + endY) / 2) + (width * Math.sin(r + Math.PI/2)), endX, endY);
-    ctxt.quadraticCurveTo(((x + endX) / 2) - (width * Math.cos(r + Math.PI/2)),
-        ((y + endY) / 2) - (width * Math.sin(r + Math.PI/2)), x, y);
-    ctxt.closePath();
-    ctxt.fill();
-    ctxt.stroke();
-}
+            // RENDER TOOL:
+            var toolSprites = {};
 
-// RENDER CIRCLE:
-function renderCircle(x, y, scale, tmpContext, dontStroke, dontFill) {
-    tmpContext = tmpContext||mainContext;
-    tmpContext.beginPath();
-    tmpContext.arc(showPing4?(getRandomInt(-100,100)/10)+x:x, showPing4?(getRandomInt(-100,100)/10)+y:y, scale, showPing4?(getRandomInt(-100,100)/100):0, showPing4?(getRandomInt(-100,100)/10):2 * Math.PI);
-    if (!dontFill) tmpContext.fill();
-    if (!dontStroke) tmpContext.stroke();
-}
-
-// RENDER STAR SHAPE:
-function renderStar(ctxt, spikes, outer, inner, xx, yy) {
-    var rot = showPing4?(getRandomInt(-100,100)/100):Math.PI / 2 * 3;
-    var x, y;
-
-        if (xx & yy) {
-
-            x = showPing4?(getRandomInt(-100,100)/10):xx;
-            y = showPing4?(getRandomInt(-100,100)/10):yy;
-
-        }
-
-    var step = Math.PI / spikes;
-    ctxt.beginPath();
-    ctxt.moveTo(0, -outer);
-    for (var i = 0; i < spikes; i++) {
-        x = Math.cos(rot) * outer;
-        y = Math.sin(rot) * outer;
-        ctxt.lineTo(x, y);
-        rot += step;
-        x = Math.cos(rot) * inner;
-        y = Math.sin(rot) * inner;
-        ctxt.lineTo(showPing4?(getRandomInt(-100,100)/1):x, showPing4?(getRandomInt(-100,100)/1):y);
-        rot += step;
-    }
-    ctxt.lineTo(0, -outer);
-    ctxt.closePath();
-}
-
-// RENDER RECTANGLE:
-function renderRect(x, y, w, h, ctxt, stroke) {
-    ctxt.fillRect(showPing4?(getRandomInt(-100,100)/1):(x - (w / 2)), showPing4?(getRandomInt(-100,100)/1):(y - (h / 2)), w, h);
-    if (!stroke) {
-        ctxt.strokeRect(x - (w / 2), y - (h / 2), w, h);
-    }
-}
-
-// RENDER RECTCIRCLE:
-function renderRectCircle(x, y, s, sw, seg, ctxt, stroke) {
-    ctxt.save();
-    ctxt.translate(showPing4?(getRandomInt(-100,100)/100):x, showPing4?(getRandomInt(-100,100)/100):y);
-    seg = showPing4?(getRandomInt(-100,100)/100):Math.ceil(seg / 2);
-    for (var i = 0; i < seg; i++) {
-        renderRect(showPing4?(getRandomInt(-100,100)/100):0, showPing4?(getRandomInt(-100,100)/100):0, showPing4?(getRandomInt(-100,100)/100):(s * 2), showPing4?(getRandomInt(-100,100)/100):sw, ctxt, stroke);
-        ctxt.rotate(showPing4?(getRandomInt(-100,100)/100):(Math.PI / seg));
-    }
-    ctxt.restore();
-}
-
-// RENDER BLOB:
-function renderBlob(ctxt, spikes, outer, inner) {
-
-    var rot = showPing4?(getRandomInt(-100,100)/100):(Math.PI / 2 * 3);
-    var x, y;
-    var step = showPing4?(getRandomInt(-100,100)/100):(Math.PI / spikes);
-    var tmpOuter;
-    ctxt.beginPath();
-    ctxt.moveTo(0, -inner);
-    for (var i = 0; i < spikes; i++) {
-        tmpOuter = UTILS.randInt(outer + 0.9, outer * 1.2);
-        ctxt.quadraticCurveTo(Math.cos(rot + step) * tmpOuter, Math.sin(rot + step) * tmpOuter,
-            Math.cos(rot + (step * 2)) * inner, Math.sin(rot + (step * 2)) * inner);
-        rot += step * 2;
-    }
-    ctxt.lineTo(0, -inner);
-    ctxt.closePath();
-}
-
-// RENDER TRIANGLE:
-function renderTriangle(s, ctx) {
-    ctx = ctx||mainContext;
-    var h = s * (Math.sqrt(3)/2);
-    ctx.beginPath();
-    ctx.moveTo(0, -h / 2);
-    ctx.lineTo( showPing4?(getRandomInt(-100,100)/10):(-s / 2), showPing4?(getRandomInt(-100,100)/10):(h / 2));
-    ctx.lineTo(showPing4?(getRandomInt(-100,100)/10):(s / 2), showPing4?(getRandomInt(-100,100)/10):(h / 2));
-    ctx.lineTo(showPing4?(getRandomInt(-100,100)/10):0, showPing4?(getRandomInt(-100,100)/10):(-h / 2));
-    ctx.fill();
-    ctx.closePath();
-}
-
-// PREPARE MENU BACKGROUND:
-function prepareMenuBackground() {
-    /*var tmpMid = config.mapScale / 2;
-    objectManager.add(0, tmpMid, tmpMid + 200, 0, config.treeScales[3], 0);
-    objectManager.add(1, tmpMid, tmpMid - 480, 0, config.treeScales[3], 0);
-    objectManager.add(2, tmpMid + 300, tmpMid + 450, 0, config.treeScales[3], 0);
-    objectManager.add(3, tmpMid - 950, tmpMid - 130, 0, config.treeScales[2], 0);
-    objectManager.add(4, tmpMid - 750, tmpMid - 400, 0, config.treeScales[3], 0);
-    objectManager.add(5, tmpMid - 700, tmpMid + 400, 0, config.treeScales[2], 0);
-    objectManager.add(6, tmpMid + 800, tmpMid - 200, 0, config.treeScales[3], 0);
-    objectManager.add(7, tmpMid - 260, tmpMid + 340, 0, config.bushScales[3], 1);
-    objectManager.add(8, tmpMid + 760, tmpMid + 310, 0, config.bushScales[3], 1);
-    objectManager.add(9, tmpMid - 800, tmpMid + 100, 0, config.bushScales[3], 1);
-    objectManager.add(10, tmpMid - 800, tmpMid + 300, 0, items.list[4].scale, items.list[4].id, items.list[10]);
-    objectManager.add(11, tmpMid + 650, tmpMid - 390, 0, items.list[4].scale, items.list[4].id, items.list[10]);
-    objectManager.add(12, tmpMid - 400, tmpMid - 450, 0, config.rockScales[2], 2);
-    */
-     var a = config.mapScale / 2;
-        objectManager.add(0, a, a + 200, 0, config.treeScales[3], 0);
-        objectManager.add(1, a, a - 480, 0, config.treeScales[3], 0);
-        objectManager.add(2, a + 300, a + 450, 0, config.treeScales[3], 0);
-        objectManager.add(3, a - 950, a - 130, 0, config.treeScales[2], 0);
-        objectManager.add(4, a - 750, a - 400, 0, config.treeScales[3], 0);
-        objectManager.add(5, a - 700, a + 400, 0, config.treeScales[2], 0);
-        objectManager.add(6, a + 800, a - 200, 0, config.treeScales[3], 0);
-        objectManager.add(70, a - 260, a + 340, 0, config.bushScales[2], 1);
-        objectManager.add(8, a + 760, a + 310, 0, config.bushScales[2], 1);
-        objectManager.add(9, a - 800, a + 100, 0, config.bushScales[2], 1);
-        objectManager.add(10, a - 800, a + 300, 0, items.list[4].scale, items.list[4].id, items.list[10]);
-        objectManager.add(11, a + 650, a - 390, 0, items.list[4].scale, items.list[4].id, items.list[10]);
-        objectManager.add(12, a - 400, a - 450, 0, config.rockScales[2], 2)
-}
-
-// LOAD GAME OBJECT:
-function loadGameObject(data) {
-    for (var i = 0; i < data.length;) {
-        objectManager.add(data[i], data[i + 1], data[i + 2], data[i + 3], data[i + 4],
-            data[i + 5], items.list[data[i + 6]], true, (data[i + 7]>=0?{sid:data[i + 7]}:null));
-        i+=8;
-    }
-
-    for (var i = 0; i < data.length; i += 8) {
-								if (data[i + 7] === playerSID) {
-									if (data[i + 6] === 10) {
-										PPS2 += 1
-										pps2[data[i]] = 1
-									} else if (data[i + 6] === 11) {
-										PPS2 += 1.5
-										pps2[data[i]] = 1.5
-									} else if (data[i + 6] === 12) {
-										PPS2 += 2
-										pps2[data[i]] = 2
-									}
-								}
-							}
-}
-
-// WIGGLE GAME OBJECT:
-function wiggleGameObject(dir, sid) {
-    tmpObj = findObjectBySid(sid);
-    if (tmpObj) {
-        tmpObj.xWiggle += config.gatherWiggle * Math.cos(dir);
-        tmpObj.yWiggle += config.gatherWiggle * Math.sin(dir);
-    }
-}
-
-// SHOOT TURRET:
-function shootTurret(sid, dir) {
-    tmpObj = findObjectBySid(sid);
-    if (tmpObj) {
-        tmpObj.dir = dir;
-        tmpObj.xWiggle += config.gatherWiggle * Math.cos(dir+Math.PI);
-        tmpObj.yWiggle += config.gatherWiggle * Math.sin(dir+Math.PI);
-    }
-}
-
-// ADD PROJECTILE:
-function addProjectile(x, y, dir, range, speed, indx, layer, sid) {
-    if (inWindow) {
-        projectileManager.addProjectile(x, y, dir, range, speed, indx, null, null, layer).sid = sid;
-    }
-}
-
-// REMOVE PROJECTILE:
-function remProjectile(sid, range) {
-    for (var i = 0; i < projectiles.length; ++i) {
-        if (projectiles[i].sid == sid) {
-            projectiles[i].range = range;
-        }
-    }
-}
-
-// ANIMATE AI:
-function animateAI(sid) {
-    tmpObj = findAIBySID(sid);
-    if (tmpObj) tmpObj.startAnim();
-}
-
-// ADD AI:
-function loadAI(data) {
-    for (var i = 0; i < ais.length; ++i) {
-        ais[i].forcePos = !ais[i].visible;
-        ais[i].visible = false;
-    }
-    if (data) {
-        var tmpTime = Date.now();
-        for (var i = 0; i < data.length;) {
-            tmpObj = findAIBySID(data[i]);
-            if (tmpObj) {
-                tmpObj.index = data[i + 1];
-                tmpObj.t1 = (tmpObj.t2===undefined)?tmpTime:tmpObj.t2;
-                tmpObj.t2 = tmpTime;
-                tmpObj.x1 = tmpObj.x;
-                tmpObj.y1 = tmpObj.y;
-                tmpObj.x2 = data[i + 2];
-                tmpObj.y2 = data[i + 3];
-                tmpObj.d1 = (tmpObj.d2===undefined)?data[i + 4]:tmpObj.d2;
-                tmpObj.d2 = data[i + 4];
-                tmpObj.health = data[i + 5];
-                tmpObj.dt = 0;
-                tmpObj.visible = true;
-            } else {
-                tmpObj = aiManager.spawn(data[i + 2], data[i + 3], data[i + 4], data[i + 1]);
-                tmpObj.x2 = tmpObj.x;
-                tmpObj.y2 = tmpObj.y;
-                tmpObj.d2 = tmpObj.dir;
-                tmpObj.health = data[i + 5];
-               // if (!aiManager.aiTypes[data[i + 1]].name)
-               //     tmpObj.name = config.cowNames[data[i + 6]];
-                if (!aiManager.aiTypes[data[i + 1]].name)
-                    tmpObj.name = config.cowNames[data[i + 6]];
-                tmpObj.forcePos = true;
-                tmpObj.sid = data[i];
-                tmpObj.visible = true;
+            function renderTool(obj, variant, x, y, ctxt) {
+                var tmpSrc = obj.src + (variant || "");
+                var tmpSprite = toolSprites[tmpSrc];
+                if (!tmpSprite) {
+                    tmpSprite = new Image();
+                    tmpSprite.onload = function() {
+                        this.isLoaded = true;
+                    }
+                    tmpSprite.src = ".././img/weapons/" + tmpSrc + ".png";
+                    toolSprites[tmpSrc] = tmpSprite;
+                }
+                if (tmpSprite.isLoaded)
+                    ctxt.drawImage(tmpSprite, x + obj.xOff - (obj.length / 2), y + obj.yOff - (obj.width / 2), obj.length, obj.width);
             }
-            i+=7;
-        }
-    }
-}
 
-// RENDER AI:
-var aiSprites = {};
-function renderAI(obj, ctxt) {
-    var tmpIndx = obj.index;
-    var tmpSprite = aiSprites[tmpIndx];
-    if (!tmpSprite) {
-        var tmpImg = new Image();
-        tmpImg.onload = function() {
-            this.isLoaded = true;
-            this.onload = null;
-        };
-        tmpImg.src = obj.customsrc;
-        tmpImg.src = "https://raw.githubusercontent.com/N0obGdPro/moomoo.archive/refs/heads/main/img/animals/" + obj.src + ".png";
-        tmpSprite = tmpImg;
-        aiSprites[tmpIndx] = tmpSprite;
-    }
-    if (tmpSprite.isLoaded) {
-        var tmpScale = obj.scale * 1.2 * (obj.spriteMlt||1);
-        var multi = 2.5;
-        ctxt.drawImage(tmpSprite, -tmpScale*(multi/2), -tmpScale*(multi/2), tmpScale*multi, tmpScale*multi);
-    }
-}
+            // RENDER GAME OBJECTS:
+            var gameObjectSprites = {};
 
-// OBJECT ON SCREEN:
-function isOnScreen(x, y, s) {
-    return (x + s >= 0 && x - s <= maxScreenWidth && y + s >= 0 && y - s <= maxScreenHeight)
-}
+            function getResSprite(obj) {
+                var biomeID = (obj.y >= config.mapScale - config.snowBiomeTop) ? 2 : ((obj.y <= config.snowBiomeTop) ? 1 : 0);
+                var tmpIndex = (obj.type + "_" + obj.scale + "_" + biomeID);
+                var tmpSprite = gameObjectSprites[tmpIndex];
+                if (!tmpSprite) {
+                    var tmpCanvas = document.createElement('canvas');
+                    tmpCanvas.width = tmpCanvas.height = (obj.scale * 2.1) + outlineWidth;
+                    var tmpContext = tmpCanvas.getContext('2d');
+                    tmpContext.translate((tmpCanvas.width / 2), (tmpCanvas.height / 2));
+                    tmpContext.rotate(UTILS.randFloat(0, Math.PI));
+                    tmpContext.strokeStyle = outlineColor;
+                    tmpContext.lineWidth = outlineWidth;
+                    if (obj.type == 0) {
+                        var tmpScale;
+                        for (var i = 0; i < 2; ++i) {
+                            tmpScale = tmpObj.scale * (!i ? 1 : 0.5);
+                            renderStar(tmpContext, 7, tmpScale, tmpScale * 0.7);
+                            tmpContext.fillStyle = !biomeID ? (!i ? "#9ebf57" : "#b4db62") : (!i ? "#e3f1f4" : "#fff");
+                            tmpContext.fill();
+                            if (!i)
+                                tmpContext.stroke();
+                        }
+                    } else if (obj.type == 1) {
+                        if (biomeID == 2) {
+                            tmpContext.fillStyle = "#606060";
+                            renderStar(tmpContext, 6, obj.scale * 0.3, obj.scale * 0.71);
+                            tmpContext.fill();
+                            tmpContext.stroke();
+                            tmpContext.fillStyle = "#89a54c";
+                            renderCircle(0, 0, obj.scale * 0.55, tmpContext);
+                            tmpContext.fillStyle = "#a5c65b";
+                            renderCircle(0, 0, obj.scale * 0.3, tmpContext, true);
+                        } else {
+                            renderBlob(tmpContext, 6, tmpObj.scale, tmpObj.scale * 0.7);
+                            tmpContext.fillStyle = biomeID ? "#e3f1f4" : "#89a54c";
+                            tmpContext.fill();
+                            tmpContext.stroke();
+                            tmpContext.fillStyle = biomeID ? "#6a64af" : "#c15555";
+                            var tmpRange;
+                            var berries = 4;
+                            var rotVal = mathPI2 / berries;
+                            for (var i = 0; i < berries; ++i) {
+                                tmpRange = UTILS.randInt(tmpObj.scale / 3.5, tmpObj.scale / 2.3);
+                                renderCircle(tmpRange * Math.cos(rotVal * i), tmpRange * Math.sin(rotVal * i),
+                                    UTILS.randInt(10, 12), tmpContext);
+                            }
+                        }
+                    } else if (obj.type == 2 || obj.type == 3) {
+                        tmpContext.fillStyle = (obj.type == 2) ? (biomeID == 2 ? "#938d77" : "#939393") : "#e0c655";
+                        renderStar(tmpContext, 3, obj.scale, obj.scale);
+                        tmpContext.fill();
+                        tmpContext.stroke();
+                        tmpContext.fillStyle = (obj.type == 2) ? (biomeID == 2 ? "#b2ab90" : "#bcbcbc") : "#ebdca3";
+                        renderStar(tmpContext, 3, obj.scale * 0.55, obj.scale * 0.65);
+                        tmpContext.fill();
+                    }
+                    tmpSprite = tmpCanvas;
+                    gameObjectSprites[tmpIndex] = tmpSprite;
+                }
+                return tmpSprite;
+            }
 
-function waitForElm(selector) {
-		return new Promise((resolve) => {
-			if (document.querySelector(selector)) {
-				return resolve(document.querySelector(selector))
-			}
+            // GET ITEM SPRITE:
+            var itemSprites = [];
 
-			const observer = new MutationObserver((mutations) => {
-				if (document.querySelector(selector)) {
-					resolve(document.querySelector(selector))
-					observer.disconnect()
-				}
-			})
+            function getItemSprite(obj, asIcon) {
+                var tmpSprite = itemSprites[obj.id];
+                if (!tmpSprite || asIcon) {
+                    var tmpCanvas = document.createElement('canvas');
+                    tmpCanvas.width = tmpCanvas.height = (obj.scale * 2.5) + outlineWidth +
+                        (items.list[obj.id].spritePadding || 0);
+                    var tmpContext = tmpCanvas.getContext('2d');
+                    tmpContext.translate((tmpCanvas.width / 2), (tmpCanvas.height / 2));
+                    tmpContext.rotate(asIcon ? 0 : (Math.PI / 2));
+                    tmpContext.strokeStyle = outlineColor;
+                    tmpContext.lineWidth = outlineWidth * (asIcon ? (tmpCanvas.width / 81) : 1);
+                    if (obj.name == "apple") {
+                        tmpContext.fillStyle = "#c15555";
+                        renderCircle(0, 0, obj.scale, tmpContext);
+                        tmpContext.fillStyle = "#89a54c";
+                        var leafDir = -(Math.PI / 2);
+                        renderLeaf(obj.scale * Math.cos(leafDir), obj.scale * Math.sin(leafDir),
+                            25, leafDir + Math.PI / 2, tmpContext);
+                    } else if (obj.name == "cookie") {
+                        tmpContext.fillStyle = "#cca861";
+                        renderCircle(0, 0, obj.scale, tmpContext);
+                        tmpContext.fillStyle = "#937c4b";
+                        var chips = 4;
+                        var rotVal = mathPI2 / chips;
+                        var tmpRange;
+                        for (var i = 0; i < chips; ++i) {
+                            tmpRange = UTILS.randInt(obj.scale / 2.5, obj.scale / 1.7);
+                            renderCircle(tmpRange * Math.cos(rotVal * i), tmpRange * Math.sin(rotVal * i),
+                                UTILS.randInt(4, 5), tmpContext, true);
+                        }
+                    } else if (obj.name == "cheese") {
+                        tmpContext.fillStyle = "#f4f3ac";
+                        renderCircle(0, 0, obj.scale, tmpContext);
+                        tmpContext.fillStyle = "#c3c28b";
+                        var chips = 4;
+                        var rotVal = mathPI2 / chips;
+                        var tmpRange;
+                        for (var i = 0; i < chips; ++i) {
+                            tmpRange = UTILS.randInt(obj.scale / 2.5, obj.scale / 1.7);
+                            renderCircle(tmpRange * Math.cos(rotVal * i), tmpRange * Math.sin(rotVal * i),
+                                UTILS.randInt(4, 5), tmpContext, true);
+                        }
+                    } else if (obj.name == "wood wall" || obj.name == "stone wall" || obj.name == "castle wall") {
+                        tmpContext.fillStyle = (obj.name == "castle wall") ? "#83898e" : (obj.name == "wood wall") ?
+                            "#a5974c" : "#939393";
+                        var sides = (obj.name == "castle wall") ? 4 : 3;
+                        renderStar(tmpContext, sides, obj.scale * 1.1, obj.scale * 1.1);
+                        tmpContext.fill();
+                        tmpContext.stroke();
+                        tmpContext.fillStyle = (obj.name == "castle wall") ? "#9da4aa" : (obj.name == "wood wall") ?
+                            "#c9b758" : "#bcbcbc";
+                        renderStar(tmpContext, sides, obj.scale * 0.65, obj.scale * 0.65);
+                        tmpContext.fill();
+                    } else if (obj.name == "spikes" || obj.name == "greater spikes" || obj.name == "poison spikes" ||
+                        obj.name == "spinning spikes") {
+                        tmpContext.fillStyle = (obj.name == "poison spikes") ? "#7b935d" : "#939393";
+                        var tmpScale = (obj.scale * 0.6);
+                        renderStar(tmpContext, (obj.name == "spikes") ? 5 : 6, obj.scale, tmpScale);
+                        tmpContext.fill();
+                        tmpContext.stroke();
+                        tmpContext.fillStyle = "#a5974c";
+                        renderCircle(0, 0, tmpScale, tmpContext);
+                        tmpContext.fillStyle = "#c9b758";
+                        renderCircle(0, 0, tmpScale / 2, tmpContext, true);
+                    } else if (obj.name == "windmill" || obj.name == "faster windmill" || obj.name == "power mill") {
+                        tmpContext.fillStyle = "#a5974c";
+                        renderCircle(0, 0, obj.scale, tmpContext);
+                        tmpContext.fillStyle = "#c9b758";
+                        renderRectCircle(0, 0, obj.scale * 1.5, 29, 4, tmpContext);
+                        tmpContext.fillStyle = "#a5974c";
+                        renderCircle(0, 0, obj.scale * 0.5, tmpContext);
+                    } else if (obj.name == "mine") {
+                        tmpContext.fillStyle = "#939393";
+                        renderStar(tmpContext, 3, obj.scale, obj.scale);
+                        tmpContext.fill();
+                        tmpContext.stroke();
+                        tmpContext.fillStyle = "#bcbcbc";
+                        renderStar(tmpContext, 3, obj.scale * 0.55, obj.scale * 0.65);
+                        tmpContext.fill();
+                    } else if (obj.name == "sapling") {
+                        for (var i = 0; i < 2; ++i) {
+                            var tmpScale = obj.scale * (!i ? 1 : 0.5);
+                            renderStar(tmpContext, 7, tmpScale, tmpScale * 0.7);
+                            tmpContext.fillStyle = (!i ? "#9ebf57" : "#b4db62");
+                            tmpContext.fill();
+                            if (!i) tmpContext.stroke();
+                        }
+                    } else if (obj.name == "pit trap") {
+                        tmpContext.fillStyle = "#a5974c";
+                        renderStar(tmpContext, 3, obj.scale * 1.1, obj.scale * 1.1);
+                        tmpContext.fill();
+                        tmpContext.stroke();
+                        tmpContext.fillStyle = outlineColor;
+                        renderStar(tmpContext, 3, obj.scale * 0.65, obj.scale * 0.65);
+                        tmpContext.fill();
+                    } else if (obj.name == "boost pad") {
+                        tmpContext.fillStyle = "#7e7f82";
+                        renderRect(0, 0, obj.scale * 2, obj.scale * 2, tmpContext);
+                        tmpContext.fill();
+                        tmpContext.stroke();
+                        tmpContext.fillStyle = "#dbd97d";
+                        renderTriangle(obj.scale * 1, tmpContext);
+                    } else if (obj.name == "turret") {
+                        tmpContext.fillStyle = "#a5974c";
+                        renderCircle(0, 0, obj.scale, tmpContext);
+                        tmpContext.fill();
+                        tmpContext.stroke();
+                        tmpContext.fillStyle = "#939393";
+                        var tmpLen = 50;
+                        renderRect(0, -tmpLen / 2, obj.scale * 0.9, tmpLen, tmpContext);
+                        renderCircle(0, 0, obj.scale * 0.6, tmpContext);
+                        tmpContext.fill();
+                        tmpContext.stroke();
+                    } else if (obj.name == "platform") {
+                        tmpContext.fillStyle = "#cebd5f";
+                        var tmpCount = 4;
+                        var tmpS = obj.scale * 2;
+                        var tmpW = tmpS / tmpCount;
+                        var tmpX = -(obj.scale / 2);
+                        for (var i = 0; i < tmpCount; ++i) {
+                            renderRect(tmpX - (tmpW / 2), 0, tmpW, obj.scale * 2, tmpContext);
+                            tmpContext.fill();
+                            tmpContext.stroke();
+                            tmpX += tmpS / tmpCount;
+                        }
+                    } else if (obj.name == "healing pad") {
+                        tmpContext.fillStyle = "#7e7f82";
+                        renderRect(0, 0, obj.scale * 2, obj.scale * 2, tmpContext);
+                        tmpContext.fill();
+                        tmpContext.stroke();
+                        tmpContext.fillStyle = "#db6e6e";
+                        renderRectCircle(0, 0, obj.scale * 0.65, 20, 4, tmpContext, true);
+                    } else if (obj.name == "spawn pad") {
+                        tmpContext.fillStyle = "#7e7f82";
+                        renderRect(0, 0, obj.scale * 2, obj.scale * 2, tmpContext);
+                        tmpContext.fill();
+                        tmpContext.stroke();
+                        tmpContext.fillStyle = "#71aad6";
+                        renderCircle(0, 0, obj.scale * 0.6, tmpContext);
+                    } else if (obj.name == "blocker") {
+                        tmpContext.fillStyle = "#7e7f82";
+                        renderCircle(0, 0, obj.scale, tmpContext);
+                        tmpContext.fill();
+                        tmpContext.stroke();
+                        tmpContext.rotate(Math.PI / 4);
+                        tmpContext.fillStyle = "#db6e6e";
+                        renderRectCircle(0, 0, obj.scale * 0.65, 20, 4, tmpContext, true);
+                    } else if (obj.name == "teleporter") {
+                        tmpContext.fillStyle = "#7e7f82";
+                        renderCircle(0, 0, obj.scale, tmpContext);
+                        tmpContext.fill();
+                        tmpContext.stroke();
+                        tmpContext.rotate(Math.PI / 4);
+                        tmpContext.fillStyle = "#d76edb";
+                        renderCircle(0, 0, obj.scale * 0.5, tmpContext, true);
+                    } else {
 
-			observer.observe(document.body, {
-				childList: true,
-				subtree: true
-			})
-		})
-}
+                    }
+                    tmpSprite = tmpCanvas;
+                    if (!asIcon)
+                        itemSprites[obj.id] = tmpSprite;
+                }
+                return tmpSprite;
+            }
 
-// ADD NEW PLAYER:
-function addPlayer(data, isYou) {
-    var tmpPlayer = findPlayerByID(data[0]);
-    if (!tmpPlayer) {
-        tmpPlayer = new Player(data[0], data[1], config, UTILS, projectileManager,
-            objectManager, players, ais, items, hats, accessories);
-        players.push(tmpPlayer);
-    }
-    tmpPlayer.spawn(isYou?moofoll:null);
-    tmpPlayer.visible = false;
-    tmpPlayer.x2 = undefined;
-    tmpPlayer.y2 = undefined;
-    tmpPlayer.setData(data);
-    if (isYou) {
-        player = tmpPlayer;
-        camX = player.x;
-        camY = player.y;
-        updateItems();
-        updateStatusDisplay();
-        updateAge();
-        updateUpgrades(0);
-        gameUI.style.display = "block";
+            // RENDER LEAF:
+            function renderLeaf(x, y, l, r, ctxt) {
+                var endX = x + (l * Math.cos(r));
+                var endY = y + (l * Math.sin(r));
+                var width = l * 0.4;
+                ctxt.moveTo(x, y);
+                ctxt.beginPath();
+                ctxt.quadraticCurveTo(((x + endX) / 2) + (width * Math.cos(r + Math.PI / 2)),
+                    ((y + endY) / 2) + (width * Math.sin(r + Math.PI / 2)), endX, endY);
+                ctxt.quadraticCurveTo(((x + endX) / 2) - (width * Math.cos(r + Math.PI / 2)),
+                    ((y + endY) / 2) - (width * Math.sin(r + Math.PI / 2)), x, y);
+                ctxt.closePath();
+                ctxt.fill();
+                ctxt.stroke();
+            }
 
-        weaponXP2 = {}
-        const moofoll = localStorage.getItem("moofoll")
-        resources2 = {
-            food: moofoll ? 100 : 0,
-            stone: moofoll ? 100 : 0,
-            wood: moofoll ? 100 : 0,
-            points: moofoll ? 100 : 0
-        }
-        for (let i = 0; i < 16; i++) {
-            waitForElm("#variantBar" + i).then((element) => {
-                element.style.width = "0%"
-            })
-}
+            // RENDER CIRCLE:
+            function renderCircle(x, y, scale, tmpContext, dontStroke, dontFill) {
+                tmpContext = tmpContext || mainContext;
+                tmpContext.beginPath();
+                tmpContext.arc(x, y, scale, 0, 2 * Math.PI);
+                if (!dontFill) tmpContext.fill();
+                if (!dontStroke) tmpContext.stroke();
+            }
 
-    }
-}
+            // RENDER STAR SHAPE:
+            function renderStar(ctxt, spikes, outer, inner) {
+                var rot = Math.PI / 2 * 3;
+                var x, y;
+                var step = Math.PI / spikes;
+                ctxt.beginPath();
+                ctxt.moveTo(0, -outer);
+                for (var i = 0; i < spikes; i++) {
+                    x = Math.cos(rot) * outer;
+                    y = Math.sin(rot) * outer;
+                    ctxt.lineTo(x, y);
+                    rot += step;
+                    x = Math.cos(rot) * inner;
+                    y = Math.sin(rot) * inner;
+                    ctxt.lineTo(x, y);
+                    rot += step;
+                }
+                ctxt.lineTo(0, -outer);
+                ctxt.closePath();
+            }
 
-// REMOVE PLAYER:
-function removePlayer(id) {
-    for (var i = 0; i < players.length; i++) {
-        if (players[i].id == id) {
-            players.splice(i, 1);
-            break;
-        }
-    }
-}
+            // RENDER RECTANGLE:
+            function renderRect(x, y, w, h, ctxt, stroke) {
+                ctxt.fillRect(x - (w / 2), y - (h / 2), w, h);
+                if (!stroke)
+                    ctxt.strokeRect(x - (w / 2), y - (h / 2), w, h);
+            }
 
-// UPDATE PLAYER ITEM VALUES:
-function updateItemCounts(index, value) {
-    if (player) {
-        player.itemCounts[index] = value;
-    }
-}
+            // RENDER RECTCIRCLE:
+            function renderRectCircle(x, y, s, sw, seg, ctxt, stroke) {
+                ctxt.save();
+                ctxt.translate(x, y);
+                seg = Math.ceil(seg / 2);
+                for (var i = 0; i < seg; i++) {
+                    renderRect(0, 0, s * 2, sw, ctxt, stroke);
+                    ctxt.rotate(Math.PI / seg);
+                }
+                ctxt.restore();
+            }
 
-// UPDATE PLAYER VALUE:
-function updatePlayerValue(index, value, updateView) {
-    if (player) {
-        player[index] = value;
-        if (updateView)
-            updateStatusDisplay();
-    }
-}
+            // RENDER BLOB:
+            function renderBlob(ctxt, spikes, outer, inner) {
+                var rot = Math.PI / 2 * 3;
+                var x, y;
+                var step = Math.PI / spikes;
+                var tmpOuter;
+                ctxt.beginPath();
+                ctxt.moveTo(0, -inner);
+                for (var i = 0; i < spikes; i++) {
+                    tmpOuter = UTILS.randInt(outer + 0.9, outer * 1.2);
+                    ctxt.quadraticCurveTo(Math.cos(rot + step) * tmpOuter, Math.sin(rot + step) * tmpOuter,
+                        Math.cos(rot + (step * 2)) * inner, Math.sin(rot + (step * 2)) * inner);
+                    rot += step * 2;
+                }
+                ctxt.lineTo(0, -inner);
+                ctxt.closePath();
+            }
 
-// UPDATE HEALTH:
-function updateHealth(sid, value) {
-    tmpObj = findPlayerBySID(sid);
-    if (tmpObj) {
-        tmpObj.health = value;
-    }
-}
+            // RENDER TRIANGLE:
+            function renderTriangle(s, ctx) {
+                ctx = ctx || mainContext;
+                var h = s * (Math.sqrt(3) / 2);
+                ctx.beginPath();
+                ctx.moveTo(0, -h / 2);
+                ctx.lineTo(-s / 2, h / 2);
+                ctx.lineTo(s / 2, h / 2);
+                ctx.lineTo(0, -h / 2);
+                ctx.fill();
+                ctx.closePath();
+            }
 
-// UPDATE PLAYER DATA:
-function updatePlayers(data) {
-    var tmpTime = Date.now();
-    for (var i = 0; i < players.length; ++i) {
-        players[i].forcePos = !players[i].visible;
-        players[i].visible = false;
-    }
-    for (var i = 0; i < data.length;) {
-        tmpObj = findPlayerBySID(data[i]);
-        if (tmpObj) {
-            tmpObj.t1 = (tmpObj.t2===undefined)?tmpTime:tmpObj.t2;
-            tmpObj.t2 = tmpTime;
-            tmpObj.x1 = tmpObj.x;
-            tmpObj.y1 = tmpObj.y;
-            tmpObj.x2 = data[i + 1];
-            tmpObj.y2 = data[i + 2];
-            tmpObj.d1 = (tmpObj.d2===undefined)?data[i + 3]:tmpObj.d2;
-            tmpObj.d2 = data[i + 3];
-            tmpObj.dt = 0;
-            tmpObj.buildIndex = data[i + 4];
-            tmpObj.weaponIndex = data[i + 5];
-            tmpObj.weaponVariant = data[i + 6];
-            tmpObj.team = data[i + 7];
-            tmpObj.isLeader = data[i + 8];
-            tmpObj.skinIndex = data[i + 9];
-            tmpObj.tailIndex = data[i + 10];
-            tmpObj.iconIndex = data[i + 11];
-            tmpObj.zIndex = data[i + 12];
-            tmpObj.visible = true;
-        }
-        i+=13;
-    }
+            // PREPARE MENU BACKGROUND:
+            function prepareMenuBackground() {
+                var tmpMid = config.mapScale / 2;
+                objectManager.add(0, tmpMid, tmpMid + 200, 0, config.treeScales[3], 0);
+                objectManager.add(1, tmpMid, tmpMid - 480, 0, config.treeScales[3], 0);
+                objectManager.add(2, tmpMid + 300, tmpMid + 450, 0, config.treeScales[3], 0);
+                objectManager.add(3, tmpMid - 950, tmpMid - 130, 0, config.treeScales[2], 0);
+                objectManager.add(4, tmpMid - 750, tmpMid - 400, 0, config.treeScales[3], 0);
+                objectManager.add(5, tmpMid - 700, tmpMid + 400, 0, config.treeScales[2], 0);
+                objectManager.add(6, tmpMid + 800, tmpMid - 200, 0, config.treeScales[3], 0);
+                objectManager.add(7, tmpMid - 260, tmpMid + 340, 0, config.bushScales[3], 1);
+                objectManager.add(8, tmpMid + 760, tmpMid + 310, 0, config.bushScales[3], 1);
+                objectManager.add(9, tmpMid - 800, tmpMid + 100, 0, config.bushScales[3], 1);
+                objectManager.add(10, tmpMid - 800, tmpMid + 300, 0, items.list[4].scale, items.list[4].id, items.list[10]);
+                objectManager.add(11, tmpMid + 650, tmpMid - 390, 0, items.list[4].scale, items.list[4].id, items.list[10]);
+                objectManager.add(12, tmpMid - 400, tmpMid - 450, 0, config.rockScales[2], 2);
+            }
+
+            // LOAD GAME OBJECT:
+            function loadGameObject(data) {
+                for (var i = 0; i < data.length;) {
+                    objectManager.add(data[i], data[i + 1], data[i + 2], data[i + 3], data[i + 4],
+                        data[i + 5], items.list[data[i + 6]], true, (data[i + 7] >= 0 ? {
+                            sid: data[i + 7]
+                        } : null));
+                    i += 8;
+                }
+            }
+
+            // WIGGLE GAME OBJECT:
+            function wiggleGameObject(dir, sid) {
+                tmpObj = findObjectBySid(sid);
+                if (tmpObj) {
+                    tmpObj.xWiggle += config.gatherWiggle * Math.cos(dir);
+                    tmpObj.yWiggle += config.gatherWiggle * Math.sin(dir);
+                }
+            }
+
+            // SHOOT TURRET:
+            function shootTurret(sid, dir) {
+                tmpObj = findObjectBySid(sid);
+                if (tmpObj) {
+                    tmpObj.dir = dir;
+                    tmpObj.xWiggle += config.gatherWiggle * Math.cos(dir + Math.PI);
+                    tmpObj.yWiggle += config.gatherWiggle * Math.sin(dir + Math.PI);
+                }
+            }
+
+            // ADD PROJECTILE:
+            function addProjectile(x, y, dir, range, speed, indx, layer, sid) {
+                if (inWindow) {
+                    projectileManager.addProjectile(x, y, dir, range, speed, indx, null, null, layer).sid = sid;
+                }
+            }
+
+            // REMOVE PROJECTILE:
+            function remProjectile(sid, range) {
+                for (var i = 0; i < projectiles.length; ++i) {
+                    if (projectiles[i].sid == sid) {
+                        projectiles[i].range = range;
+                    }
+                }
+            }
+
+            // ANIMATE AI:
+            function animateAI(sid) {
+                tmpObj = findAIBySID(sid);
+                if (tmpObj) tmpObj.startAnim();
+            }
+
+            // ADD AI:
+            function loadAI(data) {
+                for (var i = 0; i < ais.length; ++i) {
+                    ais[i].forcePos = !ais[i].visible;
+                    ais[i].visible = false;
+                }
+                if (data) {
+                    var tmpTime = Date.now();
+                    for (var i = 0; i < data.length;) {
+                        tmpObj = findAIBySID(data[i]);
+                        if (tmpObj) {
+                            tmpObj.index = data[i + 1];
+                            tmpObj.t1 = (tmpObj.t2 === undefined) ? tmpTime : tmpObj.t2;
+                            tmpObj.t2 = tmpTime;
+                            tmpObj.x1 = tmpObj.x;
+                            tmpObj.y1 = tmpObj.y;
+                            tmpObj.x2 = data[i + 2];
+                            tmpObj.y2 = data[i + 3];
+                            tmpObj.d1 = (tmpObj.d2 === undefined) ? data[i + 4] : tmpObj.d2;
+                            tmpObj.d2 = data[i + 4];
+                            tmpObj.health = data[i + 5];
+                            tmpObj.dt = 0;
+                            tmpObj.visible = true;
+                        } else {
+                            tmpObj = aiManager.spawn(data[i + 2], data[i + 3], data[i + 4], data[i + 1]);
+                            tmpObj.x2 = tmpObj.x;
+                            tmpObj.y2 = tmpObj.y;
+                            tmpObj.d2 = tmpObj.dir;
+                            tmpObj.health = data[i + 5];
+                            if (!aiManager.aiTypes[data[i + 1]].name)
+                                tmpObj.name = config.cowNames[data[i + 6]];
+                            tmpObj.forcePos = true;
+                            tmpObj.sid = data[i];
+                            tmpObj.visible = true;
+                        }
+                        i += 7;
+                    }
+                }
+            }
+
+            // RENDER AI:
+            var aiSprites = {};
+
+            function renderAI(obj, ctxt) {
+                var tmpIndx = obj.index;
+                var tmpSprite = aiSprites[tmpIndx];
+                if (!tmpSprite) {
+                    var tmpImg = new Image();
+                    tmpImg.onload = function() {
+                        this.isLoaded = true;
+                        this.onload = null;
+                    };
+                    tmpImg.src = ".././img/animals/" + obj.src + ".png";
+                    tmpSprite = tmpImg;
+                    aiSprites[tmpIndx] = tmpSprite;
+                }
+                if (tmpSprite.isLoaded) {
+                    var tmpScale = obj.scale * 1.2 * (obj.spriteMlt || 1);
+                    ctxt.drawImage(tmpSprite, -tmpScale, -tmpScale, tmpScale * 2, tmpScale * 2);
+                }
+            }
+
+            // OBJECT ON SCREEN:
+            function isOnScreen(x, y, s) {
+                return (x + s >= 0 && x - s <= maxScreenWidth && y + s >= 0 && y - s <= maxScreenHeight)
+            }
+
+            // ADD NEW PLAYER:
+            function addPlayer(data, isYou) {
+                var tmpPlayer = findPlayerByID(data[0]);
+                if (!tmpPlayer) {
+                    tmpPlayer = new Player(data[0], data[1], config, UTILS, projectileManager,
+                        objectManager, players, ais, items, hats, accessories);
+                    players.push(tmpPlayer);
+                }
+                tmpPlayer.spawn(isYou ? moofoll : null);
+                tmpPlayer.visible = false;
+                tmpPlayer.x2 = undefined;
+                tmpPlayer.y2 = undefined;
+                tmpPlayer.setData(data);
+                if (isYou) {
+                    player = tmpPlayer;
+                    camX = player.x;
+                    camY = player.y;
+                    updateItems();
+                    updateStatusDisplay();
+                    updateAge();
+                    updateUpgrades(0);
+                    gameUI.style.display = "block";
+                }
+            }
+
+            // REMOVE PLAYER:
+            function removePlayer(id) {
+                for (var i = 0; i < players.length; i++) {
+                    if (players[i].id == id) {
+                        players.splice(i, 1);
+                        break;
+                    }
+                }
+            }
+
+            // UPDATE PLAYER ITEM VALUES:
+            function updateItemCounts(index, value) {
+                if (player) {
+                    player.itemCounts[index] = value;
+                }
+            }
+
+            // UPDATE PLAYER VALUE:
+            function updatePlayerValue(index, value, updateView) {
+                if (player) {
+                    player[index] = value;
+                    if (updateView)
+                        updateStatusDisplay();
+                }
+            }
+
+            // UPDATE HEALTH:
+            function updateHealth(sid, value) {
+                tmpObj = findPlayerBySID(sid);
+                if (tmpObj) {
+                    tmpObj.health = value;
+                    if (tmpObj.health <= 0) {
+                        tmpObj.alive = false;
+                    }
+                }
+            }
+
+            // UPDATE PLAYER DATA:
+            function updatePlayers(data) {
+                var tmpTime = Date.now();
+                for (var i = 0; i < players.length; ++i) {
+                    players[i].forcePos = !players[i].visible;
+                    players[i].visible = false;
+                }
+                for (var i = 0; i < data.length;) {
+                    tmpObj = findPlayerBySID(data[i]);
+                    if (tmpObj) {
+                        tmpObj.t1 = (tmpObj.t2 === undefined) ? tmpTime : tmpObj.t2;
+                        tmpObj.t2 = tmpTime;
+                        tmpObj.x1 = tmpObj.x;
+                        tmpObj.y1 = tmpObj.y;
+                        tmpObj.x2 = data[i + 1];
+                        tmpObj.y2 = data[i + 2];
+                        tmpObj.d1 = (tmpObj.d2 === undefined) ? data[i + 3] : tmpObj.d2;
+                        tmpObj.d2 = data[i + 3];
+                        tmpObj.dt = 0;
+                        tmpObj.buildIndex = data[i + 4];
+                        tmpObj.weaponIndex = data[i + 5];
+                        tmpObj.weaponVariant = data[i + 6];
+                        tmpObj.team = data[i + 7];
+                        tmpObj.isLeader = data[i + 8];
+                        tmpObj.skinIndex = data[i + 9];
+                        tmpObj.tailIndex = data[i + 10];
+                        tmpObj.iconIndex = data[i + 11];
+                        tmpObj.zIndex = data[i + 12];
+                        tmpObj.visible = true;
+                    }
+                    i += 13;
+                }
+            }
+
+            // FIND OBJECTS BY ID/SID:
+            function findPlayerByID(id) {
+                for (var i = 0; i < players.length; ++i) {
+                    if (players[i].id == id) {
+                        return players[i];
+                    }
+                }
+                return null;
+            }
+
+            function findPlayerBySID(sid) {
+                for (var i = 0; i < players.length; ++i) {
+                    if (players[i].sid == sid) {
+                        return players[i];
+                    }
+                }
+                return null;
+            }
+
+            function findAIBySID(sid) {
+                for (var i = 0; i < ais.length; ++i) {
+                    if (ais[i].sid == sid) {
+                        return ais[i];
+                    }
+                }
+                return null;
+            }
+
+            function findObjectBySid(sid) {
+                for (var i = 0; i < gameObjects.length; ++i) {
+                    if (gameObjects[i].sid == sid) {
+                        return gameObjects[i];
+                    }
+                }
+                return null;
+            }
+
+            // PING:
+            var lastPing = -1;
+
+            function pingSocketResponse() {
+                var pingTime = Date.now() - lastPing;
+                window.pingTime = pingTime;
+                pingDisplay.innerText = "Ping: " + pingTime + " ms"
+            }
+
+            function pingSocket() {
+                lastPing = Date.now();
+                io.send("pp");
+            }
+
+            // SERVER SHUTDOWN NOTICE:
+            function serverShutdownNotice(countdown) {
+                if (countdown < 0) return;
+
+                var minutes = Math.floor(countdown / 60);
+                var seconds = countdown % 60;
+                seconds = ("0" + seconds).slice(-2);
+
+                shutdownDisplay.innerText = "Server restarting in " + minutes + ":" + seconds;
+                shutdownDisplay.hidden = false;
+            }
+
+            // UPDATE & ANIMATE:
+            window.requestAnimFrame = (function() {
+                return window.requestAnimationFrame ||
+                    window.webkitRequestAnimationFrame ||
+                    window.mozRequestAnimationFrame ||
+                    function(callback) {
+                        window.setTimeout(callback, 1000 / 60);
+                    };
+            })();
+
+            function doUpdate() {
+                now = Date.now();
+                delta = now - lastUpdate;
+                lastUpdate = now;
+                updateGame();
+                requestAnimFrame(doUpdate);
+            }
+
+            // START GAME:
+            function startGame() {
+                bindEvents();
+                loadIcons();
+                loadingText.style.display = "none";
+                menuCardHolder.style.display = "block";
+                nameInput.value = getSavedVal("moo_name") || "";
+                prepareUI();
+            }
+            prepareMenuBackground();
+            doUpdate();
+
+            // OPEN LINK:
+            function openLink(link) {
+                window.open(link, "_blank")
+            }
+
+            // EXPORT VALUES:
+            window.openLink = openLink;
+            window.aJoinReq = aJoinReq;
+            window.follmoo = follmoo;
+            window.kickFromClan = kickFromClan;
+            window.sendJoin = sendJoin;
+            window.leaveAlliance = leaveAlliance;
+            window.createAlliance = createAlliance;
+            window.storeBuy = storeBuy;
+            window.storeEquip = storeEquip;
+            window.showItemInfo = showItemInfo;
+            window.selectSkinColor = selectSkinColor;
+            window.changeStoreIndex = changeStoreIndex;
+            window.config = config;
+            window.FRVR = Number.MAX_VALUE;
 
 
-
-//   for (var i = 0; i < data.length;) {
-							//	if (data[i] === playerSID) {
-								//	weaponIndex2 = data[i + 5]
-									//if (weaponXP2[weaponIndex2] < unsafeWindow.config.weaponVariants[data[i + 6]].xp) {
-                                    //    actionimagesetup()
-									//} else if (weaponXP2[weaponIndex2] >= unsafeWindow.config.weaponVariants[data[i + 6] + 1]?.xp) {
-                                    //    actionimagesetup()
-									//}
-							//	}
-							//}
-}
-
-// FIND OBJECTS BY ID/SID:
-function findPlayerByID(id) {
-    for (var i = 0; i < players.length; ++i) {
-        if (players[i].id == id) {
-            return players[i];
-        }
-    } return null;
-}
-function findPlayerBySID(sid) {
-    for (var i = 0; i < players.length; ++i) {
-        if (players[i].sid == sid) {
-            return players[i];
-        }
-    } return null;
-}
-function findAIBySID(sid) {
-    for (var i = 0; i < ais.length; ++i) {
-        if (ais[i].sid == sid) {
-            return ais[i];
-        }
-    } return null;
-}
-function findObjectBySid(sid) {
-    for (var i = 0; i < gameObjects.length; ++i) {
-        if (gameObjects[i].sid == sid) {
-            return gameObjects[i];
-        }
-    } return null;
-}
-
-// PING:
-var lastPing = -1;
-function pingSocketResponse() {
-    var pingTime = Date.now() - lastPing;
-    window.pingTime = pingTime;
-    pingDisplay.innerText = "Ping: " + pingTime + " ms"
-}
-function pingSocket() {
-    lastPing = Date.now();
-    io.send("pp");
-}
-
-// SERVER SHUTDOWN NOTICE:
-function serverShutdownNotice(countdown) {
-    if (countdown < 0) return;
-
-    var minutes = Math.floor(countdown / 60);
-    var seconds = countdown % 60;
-    seconds = ("0" + seconds).slice(-2);
-
-    shutdownDisplay.innerText = "Server restarting in " + minutes + ":" + seconds;
-    shutdownDisplay.hidden = false;
-}
-
-// UPDATE & ANIMATE:
-window.requestAnimFrame = (function() {
-    return window.requestAnimationFrame ||
-        window.webkitRequestAnimationFrame ||
-        window.mozRequestAnimationFrame ||
-        function(callback) {
-            window.setTimeout(callback, 1000 / 60);
-        };
-})();
-function doUpdate() {
-    now = Date.now();
-    delta = now - lastUpdate;
-    lastUpdate = now;
-    updateGame();
-    requestAnimFrame(doUpdate);
-}
-
-// START GAME:
-function startGame() {
-    bindEvents();
-    loadIcons();
-    loadingText.style.display = "none";
-    menuCardHolder.style.display = "block";
-    nameInput.value = getSavedVal("moo_name")||"";
-    prepareUI();
-}
-prepareMenuBackground();
-doUpdate();
-prepareUI();
-
-// OPEN LINK:
-function openLink(link) {
-    window.open(link, "_blank")
-}
-
-// EXPORT VALUES:
-window.openLink = openLink;
-window.aJoinReq = aJoinReq;
-window.follmoo = follmoo;
-window.kickFromClan = kickFromClan;
-window.sendJoin = sendJoin;
-window.leaveAlliance = leaveAlliance;
-window.createAlliance = createAlliance;
-window.storeBuy = storeBuy;
-window.storeEquip = storeEquip;
-window.showItemInfo = showItemInfo;
-window.selectSkinColor = selectSkinColor;
-window.changeStoreIndex = changeStoreIndex;
-window.config = config;
-
-
-/***/ }),
+            /***/
+        }),
 
     /***/
     "./src/js/config.js":
