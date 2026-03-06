@@ -11140,9 +11140,15 @@ window.vultr = vultr;
                     resize();
                 }
                 } else {
-                    if (maxScreenWidth != config.maxScreenWidth/(1.28256513)|| maxScreenHeight != config.maxScreenHeight/(1.28256513)) {
+                    if (nearestEnemyDist >= 300) {
+                if (maxScreenWidth != config.maxScreenWidth/(1.28256513)|| maxScreenHeight != config.maxScreenHeight/(1.28256513)) {
                     maxScreenWidth = config.maxScreenWidth/(1.28256513);
                     maxScreenHeight = config.maxScreenHeight/(1.28256513);
+                    resize();
+                }
+                } else if (maxScreenWidth != config.maxScreenWidth/(1.28256513*2)|| maxScreenHeight != config.maxScreenHeight/(1.28256513*2)) {
+                    maxScreenWidth = config.maxScreenWidth/(1.28256513*2);
+                    maxScreenHeight = config.maxScreenHeight/(1.28256513*2);
                     resize();
                 }
                 }
