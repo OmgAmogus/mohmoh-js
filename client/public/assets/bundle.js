@@ -9658,9 +9658,9 @@ window.vultr = vultr;
                             sendMoveDir();
                         } else if (keyNum == 32) {
 
-                            if (event.target === document.body) {
+                            //if (event.target === document.body) {
                                 event.preventDefault();
-                            }
+                            //}
 
                             attackState = 1;
                             sendAtckState();
@@ -10052,7 +10052,7 @@ window.vultr = vultr;
                     }
 
                     // RENDER GRID:
-                    mainContext.lineWidth = 4;
+                    /*mainContext.lineWidth = 4;
                     mainContext.strokeStyle = "#000";
                     mainContext.globalAlpha = 0.06;
                     mainContext.beginPath();
@@ -10068,7 +10068,7 @@ window.vultr = vultr;
                             mainContext.lineTo(maxScreenWidth, y);
                         }
                     }
-                    mainContext.stroke();
+                    mainContext.stroke();*/
 
                     // RENDER BOTTOM LAYER:
                     mainContext.globalAlpha = 1;
