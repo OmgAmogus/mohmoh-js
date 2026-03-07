@@ -11125,7 +11125,7 @@ window.vultr = vultr;
                         nearestEnemyAngle = player.d2;
                         nearestEnemyDist = undefined;
                     }
-                const power = 1.28256513;
+                const power = 1.3;
                 
                 if (nearestEnemyDist >= 1000 || !enemiesNear.length) {
                 if (maxScreenWidth != config.maxScreenWidth || maxScreenHeight != config.maxScreenHeight) {
@@ -11134,9 +11134,9 @@ window.vultr = vultr;
                     resize();
                 }
                 } else {
-                    if (maxScreenWidth != config.maxScreenWidth/(1.28256513)|| maxScreenHeight != config.maxScreenHeight/(1.28256513)) {
-                    maxScreenWidth = config.maxScreenWidth/(1.28256513);
-                    maxScreenHeight = config.maxScreenHeight/(1.28256513);
+                    if (maxScreenWidth != config.maxScreenWidth/(1.3)|| maxScreenHeight != config.maxScreenHeight/(1.3)) {
+                    maxScreenWidth = config.maxScreenWidth/(1.3);
+                    maxScreenHeight = config.maxScreenHeight/(1.3);
                     resize();
                 }
                 }
