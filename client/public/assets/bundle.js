@@ -1,15 +1,3 @@
-function linker(value) {
-    const hook = {
-        0: value,
-        toString: (radix) => hook[0].toString(radix),
-        valueOf: () => hook[0].valueOf(),
-        get length() {
-            return hook[0].length;
-        }
-    };
-    return hook;
-}
-
 const vultr = {
     servers: []
 };
@@ -8066,12 +8054,9 @@ window.vultr = vultr;
         var UTILS = __webpack_require__( /*! ./libs/utils.js */ "./src/js/libs/utils.js");
         var animText = __webpack_require__( /*! ./libs/animText.js */ "./src/js/libs/animText.js");
         var config = __webpack_require__( /*! ./config.js */ "./src/js/config.js");
-        const scale = {
-            width: 192,
-            height: 108
-        };
-        config.maxScreenWidth = linker(1920 + scale.width * 3);
-        config.maxScreenHeight = linker(1080 + scale.height * 3);
+        
+        config.maxScreenWidth = 1920;
+        config.maxScreenHeight = 1080;
 
         var GameObject = __webpack_require__( /*! ./data/gameObject.js */ "./src/js/data/gameObject.js");
         var items = __webpack_require__( /*! ./data/items.js */ "./src/js/data/items.js");
@@ -11125,22 +11110,7 @@ window.vultr = vultr;
                         nearestEnemyAngle = player.d2;
                         nearestEnemyDist = undefined;
                     }
-                const power = 1.3;
-                
-                if (nearestEnemyDist >= 1000 || !enemiesNear.length) {
-                if (maxScreenWidth != config.maxScreenWidth || maxScreenHeight != config.maxScreenHeight) {
-                    maxScreenWidth = config.maxScreenWidth;
-                    maxScreenHeight = config.maxScreenHeight;
-                    resize();
-                }
-                } else {
-                    if (maxScreenWidth != config.maxScreenWidth/(1.3)|| maxScreenHeight != config.maxScreenHeight/(1.3)) {
-                    maxScreenWidth = config.maxScreenWidth/(1.3);
-                    maxScreenHeight = config.maxScreenHeight/(1.3);
-                    resize();
-                }
-                }
-            
+
                 }
 
         }
